@@ -1,0 +1,457 @@
+﻿<Window x:Class="RtspCameraSetup.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Camera Setup" Height="860" Width="1300"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI" FontSize="13">
+
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="MinWidth" Value="80"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        <Style x:Key="GroupHeader" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,14,0,6"/>
+            <Setter Property="Foreground" Value="#1F4E79"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+
+        <!-- ============================== menu ============================= -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem x:Name="ExportButton" Header="_Export camera parameters..."
+                          Click="OnExportClicked"
+                          ToolTip="Save the connected camera's image and encoder settings to a file"/>
+                <MenuItem x:Name="ImportButton" Header="_Import camera parameters..."
+                          Click="OnImportClicked"
+                          ToolTip="Replay a saved parameter file onto the connected camera"/>
+                <Separator/>
+                <MenuItem Header="Open _presets folder" Click="OnOpenPresetsFolderClicked"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Click="OnExitClicked"/>
+            </MenuItem>
+
+            <MenuItem Header="_Settings">
+                <MenuItem Header="_Subnets to search..." Click="OnSubnetSettingsClicked"/>
+                <Separator/>
+                <MenuItem Header="_Reload configuration" Click="OnReloadConfigClicked"
+                          ToolTip="Re-read cameras.json from disk"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- =========================== status bar ========================== -->
+        <Border DockPanel.Dock="Bottom" Background="#F3F3F3" BorderBrush="#DDD" BorderThickness="0,1,0,0" Padding="10,5">
+            <TextBlock x:Name="StatusText" Text="Ready." TextTrimming="CharacterEllipsis"/>
+        </Border>
+
+        <!-- ==================== global provisioning bar ==================== -->
+        <Border DockPanel.Dock="Top" Background="#F8F8F8" BorderBrush="#DDD" BorderThickness="0,0,0,1" Padding="10,7">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Preset" Style="{StaticResource FieldLabel}" FontWeight="SemiBold"/>
+                <!-- No refresh button: the presets folder is watched, so the list
+                     keeps itself current when files are added or edited. -->
+                <ComboBox x:Name="PresetBox" Width="230"/>
+                <Button x:Name="ProvisionSelectedButton" Content="Apply to selected camera"
+                        Click="OnProvisionSelectedClicked" IsEnabled="False"
+                        FontWeight="SemiBold" MinWidth="170" Margin="10,0,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" MinWidth="200"/>
+                <!-- MinWidth fits the widest settings row (label 210 + control +
+                     readout), so the parameter controls are never clipped however
+                     the splitter is dragged or the window resized. -->
+                <ColumnDefinition Width="Auto" MinWidth="640"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="260"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ========================== camera list ======================= -->
+            <DockPanel Grid.Column="0" Margin="10">
+                <TextBlock DockPanel.Dock="Top" Text="Cameras" Style="{StaticResource GroupHeader}" Margin="0,0,0,2"/>
+                <ListBox x:Name="CameraList" SelectionChanged="OnCameraSelected"
+                         HorizontalContentAlignment="Stretch">
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Reconnect" Click="OnReconnectClicked"/>
+                            <Separator/>
+                            <MenuItem Header="Forget saved credentials" Click="OnForgetCredentialsClicked"/>
+                            <Separator/>
+                            <MenuItem Header="Reboot camera" Click="OnRebootClicked"/>
+                            <MenuItem Header="Factory reset camera..." Click="OnFactoryResetClicked"
+                                      Foreground="#B00020" FontWeight="SemiBold"/>
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="2,4">
+                                <TextBlock Text="{Binding Address}" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="#666"/>
+                                <TextBlock Text="{Binding StreamSummary}" FontSize="11" Foreground="#888"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <!-- ========================= settings tabs ====================== -->
+            <Grid Grid.Column="1" Margin="0,10,0,0">
+                <TabControl x:Name="Tabs">
+
+                    <!-- ======================== image settings ================== -->
+                    <!-- No Apply/Reload: every change is written to the camera as it
+                         is made, debounced so dragging does not flood it. -->
+                    <TabItem Header="Image Settings" x:Name="ImageTab" IsEnabled="False">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="8">
+                            <StackPanel x:Name="ImagePanel" Margin="0,0,14,0"/>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- ======================== stream / encoder ================ -->
+                    <TabItem Header="Stream" x:Name="StreamTab" IsEnabled="False">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="16" MaxWidth="520" HorizontalAlignment="Left">
+
+                                <TextBlock Text="Encoder" Style="{StaticResource GroupHeader}" Margin="0,0,0,10"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Stream" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="0" Grid.Column="1" x:Name="EncStreamBox" Margin="0,0,0,8" SelectionChanged="OnEncStreamChanged">
+                                        <ComboBoxItem Content="Main stream" IsSelected="True"/>
+                                        <ComboBoxItem Content="Sub stream"/>
+                                    </ComboBox>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Codec" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="1" Grid.Column="1" x:Name="CodecBox" Margin="0,0,0,8" SelectionChanged="OnVideoChoiceChanged"/>
+                                    <TextBlock  Grid.Row="1" Grid.Column="2" x:Name="CodecHint" Style="{StaticResource FieldLabel}" Foreground="#666" Margin="10,0,0,8"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Resolution" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="2" Grid.Column="1" x:Name="ResolutionBox" Margin="0,0,0,8" SelectionChanged="OnVideoChoiceChanged"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Frame rate" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="3" Grid.Column="1" x:Name="FramerateBox" Margin="0,0,0,8" LostFocus="OnVideoFieldCommitted" KeyDown="OnFieldKeyDown"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="2" x:Name="FramerateRange" Style="{StaticResource FieldLabel}" Foreground="#666" Margin="10,0,0,8"/>
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Rate control" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="4" Grid.Column="1" x:Name="RateControlBox" Margin="0,0,0,8" SelectionChanged="OnVideoChoiceChanged"/>
+
+                                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Bitrate (kbps)" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="5" Grid.Column="1" x:Name="BitrateBox" Margin="0,0,0,8" LostFocus="OnVideoFieldCommitted" KeyDown="OnFieldKeyDown"/>
+                                    <TextBlock Grid.Row="5" Grid.Column="2" x:Name="BitrateRange" Style="{StaticResource FieldLabel}" Foreground="#666" Margin="10,0,0,8"/>
+
+                                    <TextBlock Grid.Row="6" Grid.Column="0" Text="GOP (I-interval)" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="6" Grid.Column="1" x:Name="GopBox" Margin="0,0,0,8" LostFocus="OnVideoFieldCommitted" KeyDown="OnFieldKeyDown"/>
+                                    <TextBlock Grid.Row="6" Grid.Column="2" x:Name="GopRange" Style="{StaticResource FieldLabel}" Foreground="#666" Margin="10,0,0,8"/>
+
+                                    <TextBlock Grid.Row="7" Grid.Column="0" Text="Quality" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="7" Grid.Column="1" x:Name="QualityBox" Margin="0,0,0,8" SelectionChanged="OnVideoChoiceChanged"/>
+                                </Grid>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- ========================== detection ===================== -->
+                    <!-- One sub-tab per detector, generated: which detectors exist
+                         depends on the camera's system_function capability word. -->
+                    <TabItem Header="Detection" x:Name="DetectionTab" IsEnabled="False">
+                        <TabControl x:Name="DetectorTabs" Margin="8" BorderThickness="0"/>
+                    </TabItem>
+
+                    <!-- =========================== services ==================== -->
+                    <!-- One sub-tab per entry in cameras.json "modules". -->
+                    <TabItem Header="Services" x:Name="ServicesTab" IsEnabled="False">
+                        <TabControl x:Name="ModuleTabs" Margin="8" BorderThickness="0"/>
+                    </TabItem>
+
+                    <!-- ============================ users ====================== -->
+                    <TabItem Header="Users" x:Name="UsersTab" IsEnabled="False">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="16" MaxWidth="520" HorizontalAlignment="Left">
+
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#777" Margin="0,0,0,12"
+                                           Text="These are the camera's own accounts. Changing the password of the account this app is connected with will drop the connection - the saved credentials are updated to match."/>
+
+                                <ListView x:Name="UserList" Height="150" SelectionChanged="OnUserSelected">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="User" Width="180" DisplayMemberBinding="{Binding Name}"/>
+                                            <GridViewColumn Header="Role" Width="140" DisplayMemberBinding="{Binding Role}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="User name" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="0" Grid.Column="1" x:Name="UserNameBox" Margin="0,0,0,8" Padding="4,3" MaxLength="32"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Password" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="1" Grid.Column="1" x:Name="UserPasswordBox" Margin="0,0,0,8" Padding="4,3" MaxLength="32"/>
+                                </Grid>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <Button x:Name="AddUserButton" Content="Add user" Click="OnAddUserClicked"
+                                            MinWidth="110" Padding="10,5" Margin="0,0,8,0"/>
+                                    <Button x:Name="ChangePasswordButton" Content="Set password" Click="OnChangePasswordClicked"
+                                            MinWidth="110" Padding="10,5" Margin="0,0,8,0"/>
+                                    <Button x:Name="DeleteUserButton" Content="Delete user" Click="OnDeleteUserClicked"
+                                            MinWidth="110" Padding="10,5"/>
+                                </StackPanel>
+
+                                <TextBlock x:Name="UserWarning" TextWrapping="Wrap" FontSize="11"
+                                           Foreground="Chocolate" Visibility="Collapsed" Margin="0,10,0,0"/>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- ============================= osd ======================== -->
+                    <!-- Not generated from cameras.json like the image tab: the OSD
+                         payload nests a datetime object and an array of text lines,
+                         which the flat setting generator cannot express. -->
+                    <TabItem Header="OSD" x:Name="OsdTab" IsEnabled="False">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="16" MaxWidth="460" HorizontalAlignment="Left">
+
+                                <CheckBox x:Name="OsdEnableBox" Content="Show overlays"
+                                          FontWeight="SemiBold" Margin="0,0,0,4"
+                                          Click="OnOsdToggled"/>
+
+                                <TextBlock Text="Date and time" Style="{StaticResource GroupHeader}" Margin="0,16,0,10"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Show" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <CheckBox   Grid.Row="0" Grid.Column="1" x:Name="OsdDateEnableBox" Margin="0,2,0,8"
+                                                VerticalAlignment="Center" Click="OnOsdToggled"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Show week" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <CheckBox   Grid.Row="1" Grid.Column="1" x:Name="OsdShowWeekBox" Margin="0,2,0,8"
+                                                VerticalAlignment="Center" Click="OnOsdToggled"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Date format" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="2" Grid.Column="1" x:Name="OsdDateFormatBox" Margin="0,0,0,8"
+                                                DisplayMemberPath="Label" SelectionChanged="OnOsdChoiceChanged"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Time format" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="3" Grid.Column="1" x:Name="OsdTimeFormatBox" Margin="0,0,0,8"
+                                                DisplayMemberPath="Label" SelectionChanged="OnOsdChoiceChanged"/>
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Position" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="4" Grid.Column="1" x:Name="OsdTimePositionBox" Margin="0,0,0,8"
+                                                DisplayMemberPath="Label" SelectionChanged="OnOsdChoiceChanged"/>
+                                </Grid>
+
+                                <TextBlock Text="Text overlays" Style="{StaticResource GroupHeader}" Margin="0,18,0,10"/>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Position" Style="{StaticResource FieldLabel}" Margin="0,0,8,0"/>
+                                    <ComboBox   Grid.Column="1" x:Name="OsdTextPositionBox"
+                                                DisplayMemberPath="Label" SelectionChanged="OnOsdChoiceChanged"/>
+                                </Grid>
+
+                                <!-- Rows are generated so textLines in cameras.json stays authoritative. -->
+                                <StackPanel x:Name="OsdTextPanel"/>
+
+                                <TextBlock x:Name="OsdTextWarning" TextWrapping="Wrap" FontSize="11"
+                                           Foreground="Chocolate" Visibility="Collapsed" Margin="0,4,0,0"/>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- =========================== network ====================== -->
+                    <TabItem Header="Network" x:Name="NetworkTab" IsEnabled="False">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="16" MaxWidth="460" HorizontalAlignment="Left">
+
+                                <TextBlock Text="IP configuration" Style="{StaticResource GroupHeader}" Margin="0,0,0,10"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="IP address" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="0" Grid.Column="1" x:Name="IpBox" Margin="0,0,0,8" KeyDown="OnNetworkKeyDown"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Subnet mask" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="1" Grid.Column="1" x:Name="MaskBox" Margin="0,0,0,8" KeyDown="OnNetworkKeyDown"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Gateway" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="2" Grid.Column="1" x:Name="GatewayBox" Margin="0,0,0,8" KeyDown="OnNetworkKeyDown"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="DNS" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBox   Grid.Row="3" Grid.Column="1" x:Name="DnsBox" Margin="0,0,0,8" KeyDown="OnNetworkKeyDown"/>
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="MAC" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="1" x:Name="MacText" VerticalAlignment="Center" Foreground="#555"/>
+                                </Grid>
+
+                                <!-- DHCP and IP adaptive are timed enums in the firmware, not on/off.
+                                     Leaving either enabled lets the camera abandon its static address
+                                     and take a DHCP lease when the gateway stops answering. Field
+                                     order follows the camera's own network page. -->
+                                <TextBlock Text="Connectivity" Style="{StaticResource GroupHeader}" Margin="0,18,0,10"/>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="All Net Connect" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <CheckBox   Grid.Row="0" Grid.Column="1" x:Name="QwtBox" Margin="0,2,0,8"
+                                                VerticalAlignment="Center" Click="OnAllNetConnectChanged"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="IP adaptive" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="1" Grid.Column="1" x:Name="AdaptiveBox" Margin="0,0,0,8"
+                                                DisplayMemberPath="Label" SelectionChanged="OnAdaptiveChanged"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="DHCP" Style="{StaticResource FieldLabel}" Margin="0,0,8,8"/>
+                                    <ComboBox   Grid.Row="2" Grid.Column="1" x:Name="DhcpBox" Margin="0,0,0,8"
+                                                DisplayMemberPath="Label" SelectionChanged="OnDhcpChanged"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SelfRecoveryWarning"
+                                               TextWrapping="Wrap" FontSize="11" Foreground="Chocolate"
+                                               Visibility="Collapsed"
+                                               Text="With either of these enabled the camera can leave this subnet on its own if the gateway stops answering."/>
+                                </Grid>
+
+                                <!-- Addressing is written as one object and moves the camera, so unlike
+                                     the other tabs these fields are saved together rather than as each
+                                     one is edited. -->
+                                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                    <Button x:Name="SaveNetworkButton" Content="Save" Click="OnSaveNetworkClicked"
+                                            FontWeight="SemiBold" MinWidth="90"/>
+                                    <Button Content="Revert" Click="OnRevertNetworkClicked" MinWidth="90"/>
+                                </StackPanel>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- ============================ device ====================== -->
+                    <TabItem Header="Device" x:Name="DeviceTab" IsEnabled="False">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="DevicePanel" Margin="16"/>
+                        </ScrollViewer>
+                    </TabItem>
+
+                </TabControl>
+            </Grid>
+
+            <GridSplitter Grid.Column="2" Width="6" HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch" Background="Transparent"
+                          ResizeBehavior="PreviousAndNext"/>
+
+            <!-- ================= preview (always visible, right) ============ -->
+            <!-- Never inside a tab: it must stay on screen while settings are
+                 changed, and keeping the VideoView permanently realised also avoids
+                 handing libvlc a window that does not exist yet. -->
+            <DockPanel Grid.Column="3" Margin="0,10,10,0">
+                <!-- The header row is sized to the tab strip beside it (Height, and no
+                     bottom margin) so the video panel's top edge lines up with the top
+                     of the tab content, rather than sitting a few pixels lower. -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
+                            Height="24" VerticalAlignment="Top" Margin="0">
+                    <TextBlock Text="Stream" Style="{StaticResource FieldLabel}"/>
+                    <ComboBox x:Name="StreamBox" Width="130" VerticalAlignment="Center"
+                              SelectionChanged="OnStreamChanged">
+                        <ComboBoxItem Content="Main stream" IsSelected="True"/>
+                        <ComboBoxItem Content="Sub stream"/>
+                    </ComboBox>
+                    <TextBlock x:Name="StreamUrlText" Style="{StaticResource FieldLabel}"
+                               Margin="12,0,0,0" Foreground="#666" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <!-- Ordinary WPF content, not an embedded video window: frames are
+                     pushed into a WriteableBitmap by VideoRenderer. Stretch="Uniform"
+                     scales the picture to the pane while preserving aspect ratio. -->
+                <!-- The gap goes here rather than on the header row above, so the
+                     Stream row stays level with the tab strip beside it. -->
+                <Border Background="Black" Margin="0,6,0,0">
+                    <Image x:Name="VideoImage" Stretch="Uniform"
+                           RenderOptions.BitmapScalingMode="LowQuality"/>
+                </Border>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>
+
+
+

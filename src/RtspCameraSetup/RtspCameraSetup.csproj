@@ -1,0 +1,62 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- LibVLCSharp.WPF's VideoView hosts the video surface in a WindowsFormsHost,
+         so the WinForms interop assemblies must be referenced or the XAML fails
+         to load with a TargetInvocationException. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>CameraSetup</AssemblyName>
+    <RootNamespace>RtspCameraSetup</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Product>Camera Setup</Product>
+    <AssemblyTitle>Camera Setup</AssemblyTitle>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <!-- Deliberately NOT PublishSingleFile: libvlc resolves libvlc.dll,
+         libvlccore.dll and its plugins/ tree from libvlc\win-x64\ on disk. The
+         single-file bundler pulls those DLLs into the exe and extracts them
+         elsewhere, so preview fails at runtime with "Failed to load required
+         native libraries". Ship the publish folder instead. -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- WFO0003 is a WinForms analyzer telling us to move DPI config out of the
+         manifest. This is a WPF app; the manifest is the correct place. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- We need the WinForms assemblies referenced (for VideoView's host) but not
+         its namespace imported: System.Windows.Forms.Application/MessageBox would
+         collide with the WPF types this app actually uses. -->
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- VideoLAN.LibVLC.Windows bundles libvlc itself, so the built app does NOT
+         require VLC to be installed on the target machine. It also decodes H.265,
+         which these cameras emit. -->
+    <PackageReference Include="LibVLCSharp" Version="3.8.2" />
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.8.2" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="cameras.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Shipped presets. PreserveNewest so a preset edited in the deployed folder is
+         not overwritten by a rebuild. -->
+    <None Update="presets\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
+

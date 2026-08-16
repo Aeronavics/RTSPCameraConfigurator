@@ -1,0 +1,20 @@
+# Build output
+**/bin/
+**/obj/
+
+# The published app. Deliberately not versioned: it is ~360 MB of .NET runtime, and
+# it is also where captured parameter files land at runtime. See the note in
+# README.md about presets living inside the publish folder.
+/dist/
+
+# Saved camera credentials are encrypted per Windows account and never belong in a
+# repository, wherever they end up.
+*.credentials
+credentials.dat
+
+# Editor / OS noise
+.vs/
+*.user
+*.suo
+Thumbs.db
+desktop.ini

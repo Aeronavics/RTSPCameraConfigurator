@@ -1,0 +1,981 @@
+{
+  "$comment": [
+    "Profile-driven camera definitions. The app renders its Image Settings UI",
+    "entirely from this file - add/remove/reorder entries here and the UI follows.",
+    "",
+    "Field names under 'key' must match the firmware's JSON keys exactly,",
+    "including any firmware typos (e.g. 'drc_strenght').",
+    "",
+    "'fastCmd' is optional. When present, dragging that slider fires an immediate",
+    "single-parameter write so you get live feedback in the preview. Everything is",
+    "still committed as a whole object when you press Apply."
+  ],
+
+  "preview": {
+    "$comment": [
+      "engine: 'ffmpeg' pipes raw frames from an ffmpeg subprocess; 'vlc' uses the",
+      "embedded libvlc engine. ffmpeg is the default because libvlc refuses to show a",
+      "live picture below ~300 ms of buffering on this camera family, which puts a",
+      "floor under preview latency. ffmpeg has no such floor.",
+      "",
+      "ffmpegPath is resolved next to the executable first, then on PATH. If it is",
+      "missing the app falls back to the VLC engine unless fallBackToVlc is false.",
+      "extraInputArgs are inserted before -i, e.g. [ \"-max_delay\", \"0\" ]."
+    ],
+    "engine": "ffmpeg",
+    "ffmpegPath": "ffmpeg.exe",
+    "extraInputArgs": [],
+    "fallBackToVlc": true
+  },
+
+  "discovery": {
+    "probePort": 80,
+    "loginPath": "/view/login.html",
+    "signature": "realm = \"CAMERA\"",
+    "connectTimeoutMs": 400,
+    "maxParallel": 128,
+
+    "$comment_subnets": [
+      "The /24 prefixes the app watches. This is the ENTIRE search scope - local",
+      "interface subnets are never added implicitly, so the app can only ever reach",
+      "a network named here. Add or remove entries and restart.",
+      "",
+      "The app re-scans these continuously and keeps the camera list live:",
+      "  continuous          - keep sweeping in the background",
+      "  refreshSeconds      - rest between sweeps (minimum 5)",
+      "  missesBeforeRemoval - consecutive misses before a camera is dropped; it is",
+      "                        shown as offline first, so a blip does not make rows",
+      "                        vanish under the cursor"
+    ],
+    "subnets": [
+      "192.168.144",
+      "192.168.1",
+      "192.168.2"
+    ],
+    "continuous": true,
+    "refreshSeconds": 20,
+    "missesBeforeRemoval": 3,
+
+    "$comment_reachability": [
+      "A subnet can only be searched if this machine has an address on it. At startup,",
+      "and whenever the subnet list changes, any unreachable subnet is detected and the",
+      "app offers to borrow a temporary address on the chosen adapter.",
+      "",
+      "  autoConfigureInterface - false only reports the problem and changes nothing",
+      "  interfaceAlias         - empty picks the adapter already carrying the most",
+      "                           addresses, which on a multi-homed machine is the one",
+      "                           wired to the camera networks",
+      "  temporaryHostFirst/Last- host numbers searched for a free address; each",
+      "                           candidate is ping- and TCP-probed before it is used",
+      "",
+      "Adding an address needs administrator rights, so Windows prompts once for the",
+      "whole batch. Existing addresses are never touched, and anything added is removed",
+      "when the app closes - or on the next start if it was killed before it could."
+    ],
+    "autoConfigureInterface": true,
+    "interfaceAlias": "",
+    "temporaryHostFirst": 200,
+    "temporaryHostLast": 250,
+
+    "$comment_defaults": "Always probed as well, so a camera on a factory-default address outside the swept range is still found.",
+    "defaultAddresses": [
+      "192.168.1.10",
+      "192.168.0.123",
+      "192.168.1.168"
+    ]
+  },
+
+  "presets": {
+    "$comment": [
+      "Parameter files exported from a configured camera. Anything dropped in this",
+      "folder appears in the preset list, and the folder is watched, so it updates",
+      "without restarting.",
+      "",
+      "A parameter file is always applied WHOLE, addressing included. Only files made",
+      "by Export carry a network block; the shipped Generic preset deliberately does",
+      "not, so applying it never moves a camera."
+    ],
+    "directory": "presets"
+  },
+
+  "profiles": [
+    {
+      "name": "Vatilon H82 / Hi3516CV610",
+      "match": { "cpu_type": "hi3516cv610" },
+
+      "auth": {
+        "scheme": "digest-md5",
+        "challengePath": "view/login.html",
+        "digestUri": "/cgi-bin/web.cgi?mod=account&cmd=check",
+        "loginQuery": "mod=session&cmd=login1",
+        "defaultUsername": "admin",
+        "defaultPassword": "123456"
+      },
+
+      "rtsp": {
+        "$comment_paths": [
+          "VERIFIED BY DECODING, not by DESCRIBE. This firmware answers every RTSP",
+          "path with a byte-identical canned SDP and silently falls back to the SUB",
+          "stream for anything it does not recognise - so a path can look fine, play",
+          "fine, and still be the wrong stream. Only /stream1 and",
+          "/h264/ch1/main/av_stream actually deliver the main stream.",
+          "Confirmed by changing each stream's codec and watching which path followed."
+        ],
+        "port": 554,
+        "mainPath": "/stream1",
+        "subPath": "/stream0",
+        "passwordDerivation": "hmacsha1-of-md5hex",
+        "transport": "tcp",
+
+        "$comment_caching": [
+          "Do NOT set below 300. Measured on this camera: at 100 ms the picture",
+          "freezes on the first frame while libvlc keeps decoding normally, on both",
+          "TCP and UDP - it looks exactly like a broken preview. 300 ms and above is",
+          "live. The app clamps this to 300 regardless of what is set here."
+        ],
+        "networkCachingMs": 300,
+
+        "lowLatency": true,
+        "extraOptions": []
+      },
+
+      "network": {
+        "module": "net",
+        "ipKey": "addr",
+        "maskKey": "netmask",
+        "gatewayKey": "gateway",
+        "dnsKey": "dns",
+        "dhcpKey": "dhcp_mode",
+        "adaptiveKey": "qwt_ip_adaptive_mode",
+        "allNetConnectKey": "qwt_enable",
+
+        "$comment_modes": [
+          "Labels and values taken from the camera's own web UI, not invented:",
+          "view/network_setting.html maps each <option value> to a Tag id, and",
+          "lang/en-us.js resolves it. The tag ids are NOT in value order - value 1 is",
+          "Tag2224 while value 2 is Tag2220 - so each was resolved individually.",
+          "",
+          "Both fields are timed enums, not booleans. A camera left on a subnet whose",
+          "gateway stops answering will, with adaptive enabled, give up its static",
+          "address after the interval below and take a DHCP lease instead - which is",
+          "how 192.168.144.53 moved itself to another subnet on 2026-08-14.",
+          "Set both to Disable to pin a camera in place."
+        ],
+        "dhcpModes": [
+          { "value": 0, "label": "Disable" },
+          { "value": 1, "label": "Always Enable" },
+          { "value": 2, "label": "Enable 1 hour" },
+          { "value": 3, "label": "Enable 2 hour" },
+          { "value": 4, "label": "Enable 6 hour" },
+          { "value": 5, "label": "Enable 12 hour" },
+          { "value": 6, "label": "Enable 24 hour" }
+        ],
+        "adaptiveModes": [
+          { "value": 0, "label": "Disable" },
+          { "value": 1, "label": "Always Enable" },
+          { "value": 2, "label": "Enable 1 hour" },
+          { "value": 3, "label": "Enable 2 hour" },
+          { "value": 4, "label": "Enable 6 hour" },
+          { "value": 5, "label": "Enable 12 hour" },
+          { "value": 6, "label": "Enable 24 hour" },
+          { "value": 7, "label": "Enable 10 minutes after startup" }
+        ],
+
+        "passthroughKeys": [ "iface", "auto_dns", "dns2" ],
+
+        "$comment_readonly": "Audited on hardware: dns, dns2, qwt_enable and qwt_ip_adaptive_mode all take. 'auto_dns' is reported but always reverts, and 'mac' is an identifier - both are stripped from parameter files. addr/netmask/gateway/dhcp_mode were not audited because changing them drops the connection by design; the app exercises them through the Network tab instead. qwt_ip_adaptive_mode moved out of passthroughKeys once the Network tab gained an explicit control for it.",
+        "readOnlyKeys": [ "auto_dns", "mac" ]
+      },
+
+      "$comment_detectors": [
+        "The three event sources share one object shape: enable, duration, an 'output'",
+        "linkage bitmask, three work-mode enums and a 7-entry schedule. They differ",
+        "only in the extra fields each carries and which linkage bits its page offers.",
+        "All verified live on 192.168.144.54.",
+        "",
+        "Read  mod=<module>&cmd=get, write mod=<module>&cmd=set with the whole object",
+        "in param. No channel is involved in any of them.",
+        "",
+        "Labels come from the camera's own view/*.html resolved through lang/en-us.js.",
+        "Three traps were confirmed by reading the firmware, not assumed:",
+        "",
+        "1. The work-mode select lists value 4 FIRST, then 0,1,2. Resolving those",
+        "   positionally labels 'Close' as 'Work day' and shifts everything.",
+        "2. Schedule index 0 is SUNDAY. jquery.timeplan.js emits day='0' labelled",
+        "   星期日. Each page's own lan{} block lists monday first, which is not the",
+        "   wire order and would produce a seven-way off-by-one.",
+        "3. The output BIT is authoritative, not the stored work mode. Every page does",
+        "   'if ((output >> bit) & 1) show the mode, else show Close'. This camera",
+        "   stores voice_work_mode 2 with the voice bit clear, so trusting the mode",
+        "   would silently switch the sound linkage on at the next save.",
+        "",
+        "'threshold' is in pd and md but no page exposes it, so it is read and written",
+        "back untouched rather than surfaced.",
+        "",
+        "vd (vehicle) and tp (tripwire) answer on this firmware but their",
+        "system_function bits are clear, so those features do not exist on this unit."
+      ],
+
+      "detectorDefaults": {
+        "sensitivityRange": { "min": 1, "max": 100 },
+        "durationRange": { "min": 1, "max": 999999 },
+        "$comment_days": "Order is the wire order: index 0 = Sunday.",
+        "days": [ "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" ],
+        "schedulePeriods": 3,
+        "workModes": [
+          { "value": 0, "label": "Work day" },
+          { "value": 1, "label": "Work night" },
+          { "value": 2, "label": "Work whole day" },
+          { "value": 4, "label": "Close" }
+        ],
+        "$comment_workmodeouts": "Each sets its own output bit whenever the mode is not Close, exactly as the firmware pages do. capabilityBit gates the control against device.system_function.",
+        "workModeOutputs": [
+          { "key": "light_work_mode", "label": "Light output", "bit": 5 },
+          { "key": "voice_work_mode", "label": "Sound output", "bit": 4 },
+          { "key": "alarm_out_work_mode", "label": "Alarm-out", "bit": 3, "capabilityBit": 24 }
+        ]
+      },
+
+      "$comment_output": "output bitmask: (ftp<<7)|(track<<6)|(light<<5)|(voice<<4)|(alarm_out<<3)|(email<<2)|(snapshot<<1)|client. Bit 6 (tracking) is gated on system_function bit 4, which is clear on this unit, so it is offered by no detector here.",
+
+      "detectors": [
+        {
+          "key": "pd",
+          "label": "Human",
+          "module": "pd",
+          "capabilityBit": 1,
+          "hasSensitivity": true,
+          "hasRegion": true,
+          "fields": [
+            { "key": "show_human", "label": "Show human", "type": "toggle" }
+          ],
+          "linkages": [
+            { "bit": 0, "label": "Send message" },
+            { "bit": 1, "label": "Save to SD card" },
+            { "bit": 2, "label": "Send email", "capabilityBit": 9 },
+            { "bit": 7, "label": "Send to FTP" }
+          ]
+        },
+        {
+          "key": "md",
+          "label": "Motion",
+          "module": "md",
+          "capabilityBit": 0,
+          "hasSensitivity": true,
+          "hasRegion": true,
+          "$comment": "Same page furniture as person detect; motion_detect.html offers the same four linkage checkboxes.",
+          "linkages": [
+            { "bit": 0, "label": "Send message" },
+            { "bit": 1, "label": "Save to SD card" },
+            { "bit": 2, "label": "Send email", "capabilityBit": 9 },
+            { "bit": 7, "label": "Send to FTP" }
+          ]
+        },
+        {
+          "key": "alarm_in",
+          "label": "Alarm in",
+          "module": "alarm_in",
+          "capabilityBit": 7,
+          "$comment": "alarm_in.html offers only Send Message and Send Email - its output expression in alarm_in_setting.js has no ftp or snapshot term at all, so those bits are never set here.",
+          "fields": [
+            { "key": "name", "label": "Name", "type": "text", "maxLength": 32 },
+            { "key": "type", "label": "Device type", "type": "choice", "options": [
+              { "value": 0, "label": "Normally open" },
+              { "value": 1, "label": "Normally closed" }
+            ] }
+          ],
+          "linkages": [
+            { "bit": 0, "label": "Send message" },
+            { "bit": 2, "label": "Send email", "capabilityBit": 9 }
+          ]
+        },
+        {
+          "key": "vd",
+          "label": "Vehicle",
+          "module": "vd",
+          "capabilityBit": 26,
+          "hasSensitivity": true,
+          "hasRegion": true,
+          "$comment": "NOT VERIFIED ON HARDWARE. system_function bit 26 is clear on the H82 available here, so this detector is hidden and its writes have never been exercised. Shape and labels come from a live read of mod=vd plus view/vehicle_detect.html; it is identical to pd except 'show_label' replaces 'show_human'.",
+          "fields": [
+            { "key": "show_label", "label": "Show label", "type": "toggle" }
+          ],
+          "linkages": [
+            { "bit": 0, "label": "Send message" },
+            { "bit": 1, "label": "Save to SD card" },
+            { "bit": 2, "label": "Send email", "capabilityBit": 9 },
+            { "bit": 7, "label": "Send to FTP" }
+          ]
+        },
+        {
+          "key": "tp",
+          "label": "Perimeter",
+          "module": "tp",
+          "capabilityBit": 21,
+          "hasSensitivity": true,
+          "hasRegion": true,
+          "suppressWorkModes": true,
+          "$comment": [
+            "NOT VERIFIED ON HARDWARE - system_function bit 21 is clear here.",
+            "Its payload genuinely has no light/voice/alarm-out work-mode fields, hence",
+            "suppressWorkModes. This covers the INTRUSION AREA mode only (mod=tp&cmd=get,",
+            "rectangles). The TRIP WIRE mode is a different object behind cmd=gettrip",
+            "carrying a two-point line, and needs a line-drawing surface the region",
+            "editor does not provide - deliberately not built."
+          ],
+          "fields": [
+            { "key": "show_human", "label": "Show human", "type": "toggle" },
+            { "key": "show_rule", "label": "Display area box", "type": "toggle" },
+            { "key": "direction", "label": "Alarm mode", "type": "choice", "options": [
+              { "value": 0, "label": "Two-way" },
+              { "value": 1, "label": "Left to right" },
+              { "value": 2, "label": "Right to left" }
+            ] }
+          ],
+          "linkages": [
+            { "bit": 0, "label": "Send message" },
+            { "bit": 2, "label": "Send email", "capabilityBit": 9 },
+            { "bit": 7, "label": "Send to FTP" }
+          ]
+        },
+        {
+          "key": "voice_detect",
+          "label": "Sound",
+          "module": "voice_detect",
+          "capabilityBit": 12,
+          "hasSensitivity": true,
+          "$comment": "NOT VERIFIED ON HARDWARE - system_function bit 12 is clear here. Its payload has light_work_mode and alarm_out_work_mode but no voice_work_mode, so the shared set is overridden rather than suppressed. No region.",
+          "workModeOutputs": [
+            { "key": "light_work_mode", "label": "Light output", "bit": 5 },
+            { "key": "alarm_out_work_mode", "label": "Alarm-out", "bit": 3, "capabilityBit": 24 }
+          ],
+          "linkages": [
+            { "bit": 0, "label": "Send message" },
+            { "bit": 2, "label": "Send email", "capabilityBit": 9 }
+          ]
+        }
+      ],
+
+      "$comment_modules": [
+        "Plain settings modules, rendered from this list rather than hand-built XAML.",
+        "Every field below was read from a live camera (192.168.144.54); nothing here",
+        "is guessed from a page that the firmware might not implement.",
+        "",
+        "A dotted key reaches into a nested object: 'ntp.server' is systime.ntp.server.",
+        "Fields the camera reports but that are not listed are read and written back",
+        "untouched, so nothing is lost by leaving something out.",
+        "",
+        "NOTE the naming trap: the EMAIL settings live in the module called",
+        "'alarm_out' (email_setting.js:67). It is NOT the alarm-output relay - that is",
+        "alarm_out_work_mode inside each detector. Wiring a relay control to this",
+        "module would destroy the mail configuration."
+      ],
+
+      "modules": [
+        {
+          "key": "time",
+          "label": "Time",
+          "module": "systime",
+          "note": "The camera stamps the OSD and every alarm from this clock.",
+          "$comment_readonly": "time_sec is the current epoch reading, not a setting. Capturing it into a preset and replaying it would set every camera's clock to the moment the preset was taken.",
+          "readOnlyKeys": [ "time_sec", "no_save" ],
+          "fields": [
+            { "key": "timezone", "label": "Time zone", "type": "choice", "options": [
+              { "value": 0, "label": "UTC-12:00" }, { "value": 1, "label": "UTC-11:00" },
+              { "value": 2, "label": "UTC-10:00" }, { "value": 3, "label": "UTC-09:00" },
+              { "value": 4, "label": "UTC-08:00" }, { "value": 5, "label": "UTC-07:00" },
+              { "value": 6, "label": "UTC-06:00" }, { "value": 7, "label": "UTC-05:00" },
+              { "value": 8, "label": "UTC-04:30" }, { "value": 9, "label": "UTC-04:00" },
+              { "value": 10, "label": "UTC-03:30" }, { "value": 11, "label": "UTC-03:00" },
+              { "value": 12, "label": "UTC-02:00" }, { "value": 13, "label": "UTC-01:00" },
+              { "value": 14, "label": "UTC+00:00" }, { "value": 15, "label": "UTC+01:00" },
+              { "value": 16, "label": "UTC+02:00" }, { "value": 17, "label": "UTC+03:00" },
+              { "value": 18, "label": "UTC+03:30" }, { "value": 19, "label": "UTC+04:00" },
+              { "value": 20, "label": "UTC+04:30" }, { "value": 21, "label": "UTC+05:00" },
+              { "value": 22, "label": "UTC+05:30" }, { "value": 23, "label": "UTC+05:45" },
+              { "value": 24, "label": "UTC+06:00" }, { "value": 25, "label": "UTC+06:30" },
+              { "value": 26, "label": "UTC+07:00" }, { "value": 27, "label": "UTC+08:00" },
+              { "value": 28, "label": "UTC+09:00" }, { "value": 29, "label": "UTC+09:30" },
+              { "value": 30, "label": "UTC+10:00" }, { "value": 31, "label": "UTC+11:00" },
+              { "value": 32, "label": "UTC+12:00" }, { "value": 33, "label": "UTC+13:00" }
+            ] },
+            { "key": "ntp.enable", "label": "NTP", "type": "toggle" },
+            { "key": "ntp.server", "label": "NTP server", "type": "text", "maxLength": 64 },
+            { "key": "ntp.port", "label": "NTP port", "type": "number", "min": 1, "max": 65535 },
+            { "key": "ntp.interval", "label": "Sync every", "type": "number", "min": 60, "max": 604800, "suffix": "seconds" },
+            { "key": "dst.enable", "label": "Daylight saving", "type": "toggle" },
+            { "key": "dst.offset_time", "label": "DST offset", "type": "choice", "options": [
+              { "value": 60, "label": "60 minutes" }, { "value": 120, "label": "120 minutes" }
+            ] }
+          ]
+        },
+        {
+          "key": "storage",
+          "label": "Recording",
+          "module": "storage",
+          "getCommand": "get_record_info",
+          "setCommand": "set_record_info",
+          "hasSchedule": true,
+          "$comment": "The key is 'mode', not 'record_mode'. Labels Tag1608/Tag1609.",
+          "fields": [
+            { "key": "enable", "label": "Record", "type": "toggle" },
+            { "key": "mode", "label": "Mode", "type": "choice", "options": [
+              { "value": 1, "label": "Continuous record" },
+              { "value": 2, "label": "Alarm record" }
+            ] },
+            { "key": "stream", "label": "Stream", "type": "choice", "options": [
+              { "value": 0, "label": "Main stream" },
+              { "value": 1, "label": "Sub stream" }
+            ] },
+            { "key": "file_length", "label": "File length", "type": "number", "min": 1, "max": 60, "suffix": "minutes" }
+          ]
+        },
+        {
+          "key": "privacy",
+          "label": "Privacy mask",
+          "module": "privacy",
+          "channel": 0,
+          "capabilityBit": 10,
+          "regionPrompt": "Drag on the picture to draw a privacy mask. Up to 4; masked areas are blanked in the stream and in recordings.",
+          "hasRegion": true,
+          "$comment": "Same rect encoding as the detectors: normalised 0-10000 across the frame, fixed-length array with unused entries zeroed.",
+          "fields": [
+            { "key": "enable", "label": "Privacy mask", "type": "toggle" }
+          ]
+        },
+        {
+          "key": "email",
+          "label": "Email",
+          "module": "alarm_out",
+          "capabilityBit": 9,
+          "note": "This is the module the firmware calls 'alarm_out'. It is the mail configuration, not the alarm relay.",
+          "fields": [
+            { "key": "enable", "label": "Send email", "type": "toggle" },
+            { "key": "attach_pic", "label": "Attach snapshot", "type": "toggle" },
+            { "key": "email_server", "label": "SMTP server", "type": "text", "maxLength": 64 },
+            { "key": "email_server_port", "label": "SMTP port", "type": "number", "min": 1, "max": 65535 },
+            { "key": "email_crypto", "label": "Encryption", "type": "text", "maxLength": 16 },
+            { "key": "email_username", "label": "Username", "type": "text", "maxLength": 64 },
+            { "key": "email_passwd", "label": "Password", "type": "password", "maxLength": 64 },
+            { "key": "email_sender", "label": "From address", "type": "text", "maxLength": 64 },
+            { "key": "email_sender_name", "label": "From name", "type": "text", "maxLength": 32 },
+            { "key": "email_recipient0", "label": "To 1", "type": "text", "maxLength": 64 },
+            { "key": "email_recipient1", "label": "To 2", "type": "text", "maxLength": 64 },
+            { "key": "email_recipient2", "label": "To 3", "type": "text", "maxLength": 64 },
+            { "key": "email_recipient3", "label": "To 4", "type": "text", "maxLength": 64 },
+            { "key": "email_recipient4", "label": "To 5", "type": "text", "maxLength": 64 },
+            { "key": "alarm_dev_name", "label": "Device name", "type": "text", "maxLength": 32 },
+            { "key": "email_subject", "label": "Subject", "type": "text", "maxLength": 64 },
+            { "key": "email_content", "label": "Body", "type": "text", "maxLength": 128 }
+          ]
+        },
+        {
+          "key": "audio_in",
+          "label": "Audio in",
+          "module": "audio",
+          "getCommand": "get_input",
+          "setCommand": "set_input",
+          "$comment": "audio is two objects behind two command pairs, not one. The vendor page writes every field here via set_input, then sends volume alone via set_output - hence the separate 'Audio out' entry. 'multi_input' is reported but the page never exposes it, so it is written back untouched.",
+          "fields": [
+            { "key": "enable", "label": "Audio enable", "type": "toggle" },
+            { "key": "input_type", "label": "Input type", "type": "choice", "options": [
+              { "value": 0, "label": "Mic" }, { "value": 1, "label": "Line" }
+            ] },
+            { "key": "enc_type", "label": "Encoding format", "type": "choice", "options": [
+              { "value": 3, "label": "G711 A" }, { "value": 4, "label": "G711 U" }
+            ] },
+            { "key": "sample_rate", "label": "Sample rate", "type": "choice", "options": [
+              { "value": 8000, "label": "8k" }, { "value": 11025, "label": "11k" },
+              { "value": 16000, "label": "16k" }, { "value": 22050, "label": "22k" },
+              { "value": 24000, "label": "24k" }, { "value": 32000, "label": "32k" },
+              { "value": 44100, "label": "44k" }, { "value": 48000, "label": "48k" }
+            ] },
+            { "key": "bit_width", "label": "Bit width", "type": "choice", "options": [
+              { "value": 0, "label": "8 bit" }, { "value": 1, "label": "16 bit" }, { "value": 2, "label": "32 bit" }
+            ] },
+            { "key": "volume", "label": "Input volume", "type": "number", "min": 0, "max": 100 }
+          ]
+        },
+        {
+          "key": "audio_out",
+          "label": "Audio out",
+          "module": "audio",
+          "getCommand": "get_output",
+          "setCommand": "set_output",
+          "note": "The camera's own page only ever sends the output volume; the other output fields follow the input settings.",
+          "fields": [
+            { "key": "volume", "label": "Output volume", "type": "number", "min": 0, "max": 100 }
+          ]
+        },
+        {
+          "key": "ftp",
+          "label": "FTP",
+          "module": "ftp",
+          "fields": [
+            { "key": "enable", "label": "Upload to FTP", "type": "toggle" },
+            { "key": "host", "label": "Host", "type": "text", "maxLength": 64 },
+            { "key": "port", "label": "Port", "type": "number", "min": 1, "max": 65535 },
+            { "key": "mode", "label": "Mode", "type": "choice", "options": [
+              { "value": 0, "label": "PASV" }, { "value": 1, "label": "PORT" }
+            ] },
+            { "key": "user", "label": "Username", "type": "text", "maxLength": 64 },
+            { "key": "pwd", "label": "Password", "type": "password", "maxLength": 64 },
+            { "key": "path", "label": "Remote path", "type": "text", "maxLength": 128 }
+          ]
+        },
+        {
+          "key": "rtsp",
+          "label": "RTSP",
+          "module": "rtsp",
+          "note": "Changing the port moves the stream URL; this app's preview follows it on the next connect.",
+          "fields": [
+            { "key": "enable", "label": "RTSP server", "type": "toggle" },
+            { "key": "port", "label": "Port", "type": "number", "min": 1, "max": 65535 },
+            { "key": "auth_enable", "label": "Require authentication", "type": "toggle" }
+          ]
+        },
+        {
+          "key": "onvif",
+          "label": "ONVIF",
+          "module": "onvif",
+          "fields": [
+            { "key": "enable", "label": "ONVIF service", "type": "toggle" },
+            { "key": "port", "label": "Port", "type": "number", "min": 1, "max": 65535 },
+            { "key": "auth_enable", "label": "Require authentication", "type": "toggle" }
+          ]
+        },
+        {
+          "key": "snapshot",
+          "label": "Snapshot",
+          "module": "snapshot_res",
+          "$comment": "Per-channel, like osd. It answers a channel-less read but rejects a channel-less write with 'param num error'.",
+          "channel": 0,
+          "fields": [
+            { "key": "width", "label": "Width", "type": "number", "min": 160, "max": 3840 },
+            { "key": "height", "label": "Height", "type": "number", "min": 120, "max": 2160 },
+            { "key": "quality", "label": "Quality", "type": "number", "min": 1, "max": 6 }
+          ]
+        },
+        {
+          "key": "timing_snapshot",
+          "label": "Timed snapshot",
+          "module": "timing_snapshot",
+          "hasSchedule": true,
+          "note": "Snapshots on a timer, sent wherever the intervals below are set. Separate from snapshots taken on an alarm.",
+          "fields": [
+            { "key": "enable", "label": "Timed snapshots", "type": "toggle" },
+            { "key": "ftp_interval", "label": "To FTP every", "type": "number", "min": 1, "max": 86400, "suffix": "seconds" },
+            { "key": "email_interval", "label": "To email every", "type": "number", "min": 1, "max": 86400, "suffix": "seconds" },
+            { "key": "sdcard_interval", "label": "To SD card every", "type": "number", "min": 1, "max": 86400, "suffix": "seconds" }
+          ]
+        },
+        {
+          "key": "http",
+          "label": "HTTP",
+          "module": "http",
+          "note": "The port this app and the camera's own web page are served on. Changing it drops the connection; reconnect on the new port.",
+          "fields": [
+            { "key": "port", "label": "Port", "type": "number", "min": 1, "max": 65535 }
+          ]
+        },
+        {
+          "key": "uart",
+          "label": "Serial",
+          "module": "uart",
+          "fields": [
+            { "key": "baud_rate", "label": "Baud rate", "type": "choice", "options": [
+              { "value": 1200, "label": "1200" }, { "value": 2400, "label": "2400" },
+              { "value": 4800, "label": "4800" }, { "value": 9600, "label": "9600" },
+              { "value": 19200, "label": "19200" }, { "value": 38400, "label": "38400" },
+              { "value": 57600, "label": "57600" }, { "value": 115200, "label": "115200" }
+            ] },
+            { "key": "data_bits", "label": "Data bits", "type": "choice", "options": [
+              { "value": 5, "label": "5" }, { "value": 6, "label": "6" },
+              { "value": 7, "label": "7" }, { "value": 8, "label": "8" }
+            ] },
+            { "key": "parity", "label": "Parity", "type": "choice", "options": [
+              { "value": 0, "label": "None" }, { "value": 1, "label": "Odd" }, { "value": 2, "label": "Even" }
+            ] },
+            { "key": "stop_bits", "label": "Stop bits", "type": "choice", "options": [
+              { "value": 1, "label": "1" }, { "value": 2, "label": "2" }
+            ] }
+          ]
+        },
+        {
+          "key": "p2p",
+          "label": "Cloud (P2P)",
+          "module": "p2p",
+          "$comment": "p2p_id and qrcode are this camera's identity and status is live telemetry - all three are stripped from parameter files so a preset never clones one camera's cloud identity onto another.",
+          "readOnlyKeys": [ "p2p_id", "qrcode", "status" ],
+          "fields": [
+            { "key": "enable", "label": "Cloud connection", "type": "toggle" }
+          ]
+        },
+        {
+          "key": "gb28181",
+          "label": "GB28181",
+          "module": "gb28181",
+          "$comment": "sip_user_id, sip_user_name and channel_id identify THIS camera to the platform. Replaying them onto a second camera registers two devices under one id, so they are stripped from parameter files - the server details and credentials still travel.",
+          "readOnlyKeys": [ "sip_user_id", "sip_user_name", "channel_id" ],
+          "note": "Server settings travel in a preset; this camera's own SIP id and channel id do not, since they must stay unique.",
+          "fields": [
+            { "key": "enable", "label": "GB28181", "type": "toggle" },
+            { "key": "sip_server_ip", "label": "Server IP", "type": "text", "maxLength": 64 },
+            { "key": "sip_server_port", "label": "Server port", "type": "number", "min": 1, "max": 65535 },
+            { "key": "sip_server_id", "label": "Server ID", "type": "text", "maxLength": 32 },
+            { "key": "sip_server_domain", "label": "Server domain", "type": "text", "maxLength": 32 },
+            { "key": "sip_local_port", "label": "Local port", "type": "number", "min": 1, "max": 65535 },
+            { "key": "sip_passwd", "label": "Password", "type": "password", "maxLength": 32 },
+            { "key": "register_expires", "label": "Register expires", "type": "number", "min": 30, "max": 86400, "suffix": "seconds" },
+            { "key": "register_interval", "label": "Register interval", "type": "number", "min": 5, "max": 3600, "suffix": "seconds" },
+            { "key": "heartbeat_interval", "label": "Heartbeat interval", "type": "number", "min": 1, "max": 3600, "suffix": "seconds" },
+            { "key": "heartbeat_timeout", "label": "Heartbeat timeout", "type": "number", "min": 1, "max": 60 },
+            { "key": "trans_protocol", "label": "Transport", "type": "choice", "options": [
+              { "value": 0, "label": "UDP" }, { "value": 1, "label": "TCP" }
+            ] },
+            { "key": "trans_stream", "label": "Stream", "type": "choice", "options": [
+              { "value": 0, "label": "Main stream" }, { "value": 1, "label": "Sub stream" }
+            ] }
+          ]
+        },
+        {
+          "key": "alarm_center",
+          "label": "Alarm centre",
+          "module": "alarm_center",
+          "fields": [
+            { "key": "enable", "label": "Report to alarm centre", "type": "toggle" },
+            { "key": "host", "label": "Host", "type": "text", "maxLength": 64 },
+            { "key": "port", "label": "Port", "type": "number", "min": 1, "max": 65535 },
+            { "key": "protocol", "label": "Protocol", "type": "number", "min": 0, "max": 8 }
+          ]
+        }
+      ],
+
+      "osd": {
+        "module": "osd",
+        "channel": 0,
+
+        "$comment": [
+          "Read:  mod=osd&cmd=get   with the channel in param2 (GetChannelAsync).",
+          "Write: mod=osd&cmd=set   with the channel in param, payload in param2.",
+          "Verified live on 192.168.144.54; omitting param2 on the read returns",
+          "'param num error'. There is no osd_ability module - the firmware exposes no",
+          "font, size or colour options, so none are offered here.",
+          "",
+          "chn_num is 1 and channel 1 echoes channel 0, so no channel selector.",
+          "",
+          "Labels and values are taken from the camera's own view/osd_setting.html and",
+          "resolved tag by tag through lang/en-us.js. Position 4 ('Hidden', Tag1908) is",
+          "commented out in the firmware's own page, so it is not offered.",
+          "",
+          "The vendor page writes ONE position to all five text lines (sel_osd_pos),",
+          "even though the JSON carries a pos per line - this follows that, since it is",
+          "the behaviour the firmware is known to accept."
+        ],
+
+        "$comment_readonly": "no_save is a transport flag, not a setting - the firmware's own page never sends it.",
+        "readOnlyKeys": [ "no_save" ],
+
+        "maxTextWidth": 40,
+        "textLines": 5,
+
+        "positions": [
+          { "value": 0, "label": "Left top" },
+          { "value": 1, "label": "Left bottom" },
+          { "value": 2, "label": "Right top" },
+          { "value": 3, "label": "Right bottom" }
+        ],
+        "timeFormats": [
+          { "value": 0, "label": "12 hour" },
+          { "value": 1, "label": "24 hour" }
+        ],
+        "dateFormats": [
+          { "value": 0, "label": "YYYY-MM-DD" },
+          { "value": 1, "label": "MM-DD-YYYY" },
+          { "value": 2, "label": "YYYY/MM/DD" },
+          { "value": 3, "label": "MM/DD/YYYY" },
+          { "value": 4, "label": "DD-MM-YYYY" },
+          { "value": 5, "label": "DD/MM/YYYY" }
+        ]
+      },
+
+      "video": {
+        "module": "video",
+        "abilityModule": "stream_ability",
+        "mainCommandSuffix": "main",
+        "subCommandSuffix": "sub",
+
+        "$comment": [
+          "'bit' is tested against the camera's venc_set capability mask, so only",
+          "codecs the hardware actually supports are offered. 'value' is what gets",
+          "written to enc_type."
+        ],
+        "codecs": [
+          { "bit": 1, "value": 0, "label": "H.264" },
+          { "bit": 2, "value": 1, "label": "H.265 (HEVC)" }
+        ],
+
+        "$comment_readonly": "Audited on hardware: enc_type, width/height, framerate, gop, rc_mode, bitrate and quality all take. 'smart_enable' is reported but always reverts, so it is stripped from parameter files.",
+        "readOnlyKeys": [ "smart_enable" ],
+
+        "$comment_labels": "Rate control and quality labels taken from the camera's own video settings page rather than invented.",
+        "rateControlModes": [
+          { "value": 0, "label": "Fixed bitrate (CBR)" },
+          { "value": 1, "label": "Variable bitrate (VBR)" }
+        ],
+
+        "qualityLevels": [
+          { "value": 1, "label": "Worst" },
+          { "value": 2, "label": "Worse" },
+          { "value": 3, "label": "General" },
+          { "value": 4, "label": "Good" },
+          { "value": 5, "label": "Better" },
+          { "value": 6, "label": "Best" }
+        ]
+      },
+
+      "system": {
+        "$comment": "Reboot and factory reset are the SAME module and differ by one word - 'reboot' keeps settings, 'reset' erases everything including the IP address. Named here so neither is ever assembled from a string at the call site.",
+        "module": "system",
+        "rebootCommand": "reboot",
+        "factoryResetCommand": "reset",
+        "rebootSeconds": 25
+      },
+
+      "image": {
+        "module": "image",
+        "channel": 0,
+
+        "$comment_readonly": [
+          "Audited on hardware by writing each field individually and reading it",
+          "back. These two are reported by the firmware but never accept a value:",
+          "  led_brightness - the live measured IR level, discarded in auto AND",
+          "                   manual LED mode. max_led_brightness is the real knob.",
+          "  rotation       - only 0 is ever kept on this sensor; use mirror+flip.",
+          "They are stripped from exported parameter files so a preset carries only",
+          "settings that do something when replayed.",
+          "",
+          "30 of the 35 fields the firmware reports are settable; day_begin/day_end",
+          "are structures and are carried through untouched."
+        ],
+        "readOnlyKeys": [ "led_brightness", "rotation" ],
+
+        "groups": [
+          {
+            "name": "Basic",
+            "settings": [
+              { "key": "brightness",         "label": "Brightness",       "type": "slider", "min": 0, "max": 255, "fastCmd": 0 },
+              { "key": "contrast",           "label": "Contrast",         "type": "slider", "min": 0, "max": 255, "fastCmd": 1 },
+              { "key": "saturation",         "label": "Saturation",       "type": "slider", "min": 0, "max": 255, "fastCmd": 2 },
+              { "key": "sharpness",          "label": "Sharpness",        "type": "slider", "min": 0, "max": 255, "fastCmd": 3 }
+            ]
+          },
+          {
+            "name": "Orientation",
+            "settings": [
+              { "$comment": "'rotation' is deliberately absent: the firmware reports it but silently discards every value except 0, on this sensor. Use mirror and flip together for 180 degrees.",
+                "key": "mirror",     "label": "Mirror (horizontal flip)", "type": "toggle" },
+              { "key": "flip",       "label": "Flip (vertical)",          "type": "toggle" },
+              { "key": "ldc_enable", "label": "Lens distortion correction", "type": "toggle" }
+            ]
+          },
+          {
+            "name": "Exposure & Dynamic Range",
+            "settings": [
+              { "$comment": [
+                  "'exposure' is the SHUTTER TIME, not an auto/manual flag - the web UI",
+                  "builds this list at runtime from tv_standard, so the values mean",
+                  "different speeds under PAL and NTSC. optionsFrom/optionSets",
+                  "reproduces that: change TV standard and this list rebuilds.",
+                  "The fastest step is gated to hi3516cv610/cv608 in the firmware, so",
+                  "it is gated here too rather than offering a speed the sensor refuses."
+                ],
+                "key": "exposure", "label": "Exposure time", "type": "choice",
+                "optionsFrom": "tv_standard",
+                "optionSets": {
+                  "0": [
+                    { "value": 0,  "label": "Auto" },
+                    { "value": 1,  "label": "1/25" },
+                    { "value": 2,  "label": "1/50" },
+                    { "value": 3,  "label": "1/100" },
+                    { "value": 4,  "label": "1/250" },
+                    { "value": 5,  "label": "1/500" },
+                    { "value": 6,  "label": "1/1000" },
+                    { "value": 7,  "label": "1/1250" },
+                    { "value": 8,  "label": "1/2000" },
+                    { "value": 9,  "label": "1/3000" },
+                    { "value": 10, "label": "1/5000" },
+                    { "value": 11, "label": "1/6000" },
+                    { "value": 12, "label": "1/8000" },
+                    { "value": 13, "label": "1/10000" },
+                    { "value": 14, "label": "1/100000", "requiresCpu": [ "hi3516cv610", "hi3516cv608" ] }
+                  ],
+                  "1": [
+                    { "value": 0,  "label": "Auto" },
+                    { "value": 1,  "label": "1/30" },
+                    { "value": 2,  "label": "1/60" },
+                    { "value": 3,  "label": "1/120" },
+                    { "value": 4,  "label": "1/300" },
+                    { "value": 5,  "label": "1/600" },
+                    { "value": 6,  "label": "1/1200" },
+                    { "value": 7,  "label": "1/1500" },
+                    { "value": 8,  "label": "1/2400" },
+                    { "value": 9,  "label": "1/3600" },
+                    { "value": 10, "label": "1/6000" },
+                    { "value": 11, "label": "1/7200" },
+                    { "value": 12, "label": "1/9600" },
+                    { "value": 13, "label": "1/12000" },
+                    { "value": 14, "label": "1/120000", "requiresCpu": [ "hi3516cv610", "hi3516cv608" ] }
+                  ]
+                }
+              },
+              { "$comment": "Only Off/On, matching image_setting3 - the page this firmware actually uses (proven: it accepts cmd=set_single, which only that page issues). The older image_setting page offers a third value 2 = Auto; the camera stores it, but it is not offered here because this firmware's own UI does not.",
+                "key": "wdr_enable",    "label": "WDR", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Off" },
+                  { "value": 1, "label": "On" }
+                ]
+              },
+              { "key": "drc_strenght",  "label": "DRC strength", "type": "slider", "min": 0, "max": 255, "fastCmd": 4 },
+              { "key": "backlight_mode","label": "Backlight compensation", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Off" },
+                  { "value": 1, "label": "BLC" },
+                  { "value": 2, "label": "HLC" }
+                ]
+              },
+              { "$comment": "AGC is a gain CEILING, not a low/medium/high setting - the firmware offers automatic plus powers of two up to 512x.",
+                "key": "agc_type", "label": "AGC gain limit", "type": "choice",
+                "options": [
+                  { "value": 0,   "label": "Automatic" },
+                  { "value": 1,   "label": "1x" },
+                  { "value": 2,   "label": "2x" },
+                  { "value": 4,   "label": "4x" },
+                  { "value": 8,   "label": "8x" },
+                  { "value": 16,  "label": "16x" },
+                  { "value": 32,  "label": "32x" },
+                  { "value": 64,  "label": "64x" },
+                  { "value": 128, "label": "128x" },
+                  { "value": 256, "label": "256x" },
+                  { "value": 512, "label": "512x" }
+                ]
+              },
+              { "key": "scene_mode", "label": "Scene", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Common" },
+                  { "value": 1, "label": "Outdoor" }
+                ]
+              },
+              { "key": "nr_enable", "label": "Noise reduction", "type": "toggle" }
+            ]
+          },
+          {
+            "name": "Day / Night",
+            "settings": [
+              { "$comment": "Checked against the firmware's own list: 0 is Auto and 1 is Always Day. An earlier version of this file had those two swapped.",
+                "key": "day_night_mode", "label": "Day/Night mode", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Auto" },
+                  { "value": 1, "label": "Always day (colour)" },
+                  { "value": 2, "label": "Always night (mono)" },
+                  { "value": 3, "label": "Scheduled" }
+                ]
+              },
+              { "$comment": "Measured range is 1-5. 0 clamps up to 1, values above 5 clamp down to 5.",
+                "key": "day_night_lux",  "label": "Switch sensitivity", "type": "slider", "min": 1, "max": 5 },
+              { "$comment": "The firmware lists this as plain levels 0-10 with no units, so it is shown as a level rather than invented second values.",
+                "key": "ircut_delay",    "label": "IR-cut delay level", "type": "slider", "min": 0, "max": 10 },
+              { "key": "night_fps_select", "label": "Night frame rate", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Full frame rate" },
+                  { "value": 1, "label": "16 fps" },
+                  { "value": 2, "label": "10 fps" },
+                  { "value": 3, "label": "5 fps" }
+                ]
+              },
+              { "key": "day_to_night_brightness", "label": "Day to night threshold", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Low" },
+                  { "value": 1, "label": "Mid" },
+                  { "value": 2, "label": "High" }
+                ]
+              },
+              { "key": "night_to_day_brightness", "label": "Night to day threshold", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Low" },
+                  { "value": 1, "label": "Mid" },
+                  { "value": 2, "label": "High" }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Illuminator",
+            "settings": [
+              { "$comment": "'led_brightness' is deliberately absent: the firmware always reports the live measured level and discards writes, in both auto and manual LED mode. 'max_led_brightness' is the knob that works.",
+                "$comment2": "Checked against the firmware: 0 is automatic and 1 is manual. An earlier version of this file had these inverted.",
+                "key": "led_brightness_mode", "label": "IR LED mode", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Automatic" },
+                  { "value": 1, "label": "Manual" }
+                ]
+              },
+              { "key": "max_led_brightness",  "label": "IR LED maximum", "type": "slider", "min": 0, "max": 100, "fastCmd": 5 }
+            ]
+          },
+          {
+            "name": "White Balance",
+            "settings": [
+              { "$comment": "Firmware list. The earlier Auto/Manual/Indoor/Outdoor labels were invented - 2 is a lock, and 3-6 are light-source presets.",
+                "key": "awb_type",  "label": "White balance", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Auto (AWB)" },
+                  { "value": 1, "label": "Manual (MWB)" },
+                  { "value": 2, "label": "Locked" },
+                  { "value": 3, "label": "White light" },
+                  { "value": 4, "label": "Warm light" },
+                  { "value": 5, "label": "Fluorescent" },
+                  { "value": 6, "label": "Natural light" }
+                ]
+              },
+              { "key": "mwb_red",   "label": "Manual red gain",   "type": "slider", "min": 0, "max": 255, "fastCmd": 6 },
+              { "key": "mwb_green", "label": "Manual green gain", "type": "slider", "min": 0, "max": 255 },
+              { "key": "mwb_blue",  "label": "Manual blue gain",  "type": "slider", "min": 0, "max": 255, "fastCmd": 7 }
+            ]
+          },
+          {
+            "name": "Power Line / Flicker",
+            "settings": [
+              { "$comment": "The web UI presents these as one three-way control: off, or on at weak/strong strength. It is NOT a mains-frequency selector - the earlier 50/60 Hz labels here were wrong. Mains frequency is tv_standard.",
+                "key": "anti_flicker_enable", "label": "Anti-flicker", "type": "toggle" },
+              { "key": "anti_flicker_mode",   "label": "Anti-flicker strength", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "Weak" },
+                  { "value": 1, "label": "Strong" }
+                ]
+              },
+              { "key": "tv_standard", "label": "TV standard", "type": "choice",
+                "options": [
+                  { "value": 0, "label": "PAL (50 Hz)" },
+                  { "value": 1, "label": "NTSC (60 Hz)" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+
+      "deviceInfoFields": [
+        { "key": "nickname",       "label": "Name" },
+        { "key": "devtype",        "label": "Model" },
+        { "key": "cpu_type",       "label": "Chipset" },
+        { "key": "version",        "label": "Firmware" },
+        { "key": "kernel_version", "label": "Kernel" },
+        { "key": "uboot_version",  "label": "U-Boot" },
+        { "key": "serial_num",     "label": "Serial" },
+        { "key": "devno",          "label": "Device no." },
+        { "key": "chn_num",        "label": "Channels" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+<Window x:Class="RtspCameraSetup.RegionEditor"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit region"
+        Width="900" Height="640"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontFamily="Segoe UI" FontSize="13">
+
+    <DockPanel Margin="14">
+
+        <TextBlock DockPanel.Dock="Top" x:Name="PromptText" TextWrapping="Wrap"
+                   Margin="0,0,0,10" Foreground="#555"
+                   Text="Drag on the picture to draw a region."/>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,12,0,0">
+            <TextBlock x:Name="CountText" VerticalAlignment="Center"
+                       Margin="0,0,16,0" Foreground="#666"/>
+            <Button Content="Remove last" Click="OnRemoveLast" MinWidth="100" Margin="0,0,8,0" Padding="10,5"/>
+            <Button Content="Clear all" Click="OnClearAll" MinWidth="90" Margin="0,0,8,0" Padding="10,5"/>
+            <Button x:Name="OkButton" Content="Apply" IsDefault="True" Click="OnOk"
+                    MinWidth="90" Margin="0,0,8,0" Padding="10,5" FontWeight="SemiBold"/>
+            <Button Content="Cancel" IsCancel="True" MinWidth="90" Padding="10,5"/>
+        </StackPanel>
+
+        <!-- The picture and the drawing surface must line up exactly, so both live in
+             the same fixed-aspect box rather than being stretched independently. -->
+        <Border BorderBrush="#CCC" BorderThickness="1" Background="#111"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid x:Name="Stage" Width="800" Height="450">
+                <Image x:Name="FrameImage" Stretch="Fill"/>
+                <TextBlock x:Name="NoFrameText" Foreground="#888" TextWrapping="Wrap"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextAlignment="Center" Visibility="Collapsed"
+                           Text="No preview frame available.&#10;Regions can still be drawn - the picture is only a guide."/>
+                <Canvas x:Name="DrawCanvas" Background="Transparent"
+                        MouseLeftButtonDown="OnCanvasMouseDown"
+                        MouseMove="OnCanvasMouseMove"
+                        MouseLeftButtonUp="OnCanvasMouseUp"/>
+            </Grid>
+        </Border>
+
+    </DockPanel>
+</Window>
