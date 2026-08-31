@@ -57,42 +57,10 @@ if not defined ISCC (
     exit /b 1
 )
 
-rem ---------------------------------------------------------------------------
-rem  ffmpeg. It is the preview engine, bundled so the good engine is the default
-rem  with nothing for the user to do. It is not committed to the repo (~212 MB),
-rem  so it is located on this machine at build time.
-rem
-rem  The WinGet "Links" entry is a zero-byte shim, so resolve the real binary.
-rem  If none is found the installer still builds; it just warns at the end.
-rem ---------------------------------------------------------------------------
-set "FFMPEG="
-set "FFDEFS="
-set "FFLIC="
-
-rem Prefer the essentials build. It carries the same H.264/H.265 decoders and the
-rem rawvideo muxer this app actually uses, at ~97 MB against ~212 MB for full_build.
-if exist "%LOCALAPPDATA%\Microsoft\WinGet\Packages" (
-    for /f "delims=" %%F in ('dir /b /s "%LOCALAPPDATA%\Microsoft\WinGet\Packages\ffmpeg.exe" 2^>nul ^| findstr /i essentials') do (
-        if not defined FFMPEG call :usereal "%%F"
-    )
-    for /f "delims=" %%F in ('dir /b /s "%LOCALAPPDATA%\Microsoft\WinGet\Packages\ffmpeg.exe" 2^>nul') do (
-        if not defined FFMPEG call :usereal "%%F"
-    )
-)
-if not defined FFMPEG for %%F in (ffmpeg.exe) do if exist "%%~$PATH:F" call :usereal "%%~$PATH:F"
-
-if defined FFMPEG (
-    echo Bundling ffmpeg from "%FFMPEG%"
-    call :addlicence
-) else (
-    echo ffmpeg not found on this machine - building without it.
-    echo The installer will tell the user how to add it.
-)
-
 if not exist "%ROOT%\build" mkdir "%ROOT%\build"
 
 echo Compiling installer with "%ISCC%"...
-"%ISCC%" /DPayload="%PAYLOAD%" %FFDEFS% "%~dp0CameraSetup.iss"
+"%ISCC%" /DPayload="%PAYLOAD%" "%~dp0CameraSetup.iss"
 if errorlevel 1 (
     echo.
     echo ERROR: the installer failed to compile.
@@ -105,14 +73,5 @@ endlocal
 goto :eof
 
 rem A zero-byte file is the WinGet shim, not the real binary. Skip it.
-:usereal
-if %~z1 GTR 1000000 set "FFMPEG=%~f1"
-goto :eof
 
 rem This is a GPL build, so its licence text has to travel with it.
-:addlicence
-for %%D in ("%FFMPEG%") do set "FFPARENT=%%~dpD.."
-set "FFDEFS=/DFfmpeg=%FFMPEG%"
-if exist "%FFPARENT%\LICENSE" set "FFDEFS=%FFDEFS% /DFfmpegLicense=%FFPARENT%\LICENSE"
-if exist "%FFPARENT%\README.txt" set "FFDEFS=%FFDEFS% /DFfmpegReadme=%FFPARENT%\README.txt"
-goto :eof

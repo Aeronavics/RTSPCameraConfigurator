@@ -6,9 +6,6 @@ namespace RtspCameraSetup;
 
 public partial class App : Application
 {
-    /// <summary>Null when libvlc loaded; otherwise why preview is unavailable.</summary>
-    public static string? VideoInitError { get; private set; }
-
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -16,18 +13,6 @@ public partial class App : Application
         // A background failure (a camera going away mid-request, a socket reset)
         // should surface as a message, not kill the app.
         DispatcherUnhandledException += OnDispatcherUnhandledException;
-
-        // Must happen before any VideoView is constructed. MainWindow's XAML
-        // contains one, so doing this in the window constructor is too late:
-        // the element throws a NullReferenceException as the tree is built.
-        try
-        {
-            LibVLCSharp.Shared.Core.Initialize();
-        }
-        catch (Exception ex)
-        {
-            VideoInitError = ex.Message;
-        }
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

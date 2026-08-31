@@ -4,10 +4,6 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <!-- LibVLCSharp.WPF's VideoView hosts the video surface in a WindowsFormsHost,
-         so the WinForms interop assemblies must be referenced or the XAML fails
-         to load with a TargetInvocationException. -->
-    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -26,33 +22,14 @@
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
-    <!-- Deliberately NOT PublishSingleFile: libvlc resolves libvlc.dll,
-         libvlccore.dll and its plugins/ tree from libvlc\win-x64\ on disk. The
-         single-file bundler pulls those DLLs into the exe and extracts them
-         elsewhere, so preview fails at runtime with "Failed to load required
-         native libraries". Ship the publish folder instead. -->
+    <!-- Deliberately NOT PublishSingleFile: the app locates ffmpeg.exe beside
+         itself, and the single-file bundler extracts to a temp directory where
+         that lookup no longer finds it. Ship the publish folder. -->
     <PublishSingleFile>false</PublishSingleFile>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <!-- WFO0003 is a WinForms analyzer telling us to move DPI config out of the
-         manifest. This is a WPF app; the manifest is the correct place. -->
-    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- We need the WinForms assemblies referenced (for VideoView's host) but not
-         its namespace imported: System.Windows.Forms.Application/MessageBox would
-         collide with the WPF types this app actually uses. -->
-    <Using Remove="System.Windows.Forms" />
-  </ItemGroup>
 
-  <ItemGroup>
-    <!-- VideoLAN.LibVLC.Windows bundles libvlc itself, so the built app does NOT
-         require VLC to be installed on the target machine. It also decodes H.265,
-         which these cameras emit. -->
-    <PackageReference Include="LibVLCSharp" Version="3.8.2" />
-    <PackageReference Include="LibVLCSharp.WPF" Version="3.8.2" />
-    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
-  </ItemGroup>
 
   <ItemGroup>
     <None Update="cameras.json">
@@ -68,6 +45,36 @@
   <ItemGroup>
     <Resource Include="assets\sps-logo.png" />
   </ItemGroup>
+
+  <!-- ffmpeg is the only preview engine, so a publish that does not carry it is
+       not usable. Located at build time rather than committed: it is ~97 MB.
+       A missing one is a warning, not an error - a plain build still runs for
+       development, it just has no preview. -->
+  <Target Name="BundleFfmpeg" AfterTargets="Publish">
+    <Exec Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\find-ffmpeg.cmd&quot;"
+          ConsoleToMSBuild="true" StandardOutputImportance="low" ContinueOnError="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="FoundFfmpeg" />
+    </Exec>
+
+    <Copy SourceFiles="$(FoundFfmpeg)" DestinationFolder="$(PublishDir)"
+          Condition="'$(FoundFfmpeg)' != '' And Exists('$(FoundFfmpeg)')" />
+
+    <!-- The build shipped is GPL v3, so its licence text has to travel with the
+         binary. It sits one level up from bin/. -->
+    <PropertyGroup Condition="'$(FoundFfmpeg)' != ''">
+      <FfmpegRoot>$([System.IO.Path]::GetDirectoryName($([System.IO.Path]::GetDirectoryName($(FoundFfmpeg)))))</FfmpegRoot>
+    </PropertyGroup>
+
+    <Copy SourceFiles="$(FfmpegRoot)\LICENSE" DestinationFiles="$(PublishDir)ffmpeg-LICENSE.txt"
+          Condition="'$(FfmpegRoot)' != '' And Exists('$(FfmpegRoot)\LICENSE')" />
+    <Copy SourceFiles="$(FfmpegRoot)\README.txt" DestinationFiles="$(PublishDir)ffmpeg-README.txt"
+          Condition="'$(FfmpegRoot)' != '' And Exists('$(FfmpegRoot)\README.txt')" />
+
+    <Message Importance="high" Text="Bundled ffmpeg from $(FoundFfmpeg)"
+             Condition="'$(FoundFfmpeg)' != '' And Exists('$(FoundFfmpeg)')" />
+    <Warning Text="No ffmpeg.exe found to bundle - the published app will have no preview. Install one with: winget install Gyan.FFmpeg.Essentials"
+             Condition="'$(FoundFfmpeg)' == '' Or !Exists('$(FoundFfmpeg)')" />
+  </Target>
 
 </Project>
 

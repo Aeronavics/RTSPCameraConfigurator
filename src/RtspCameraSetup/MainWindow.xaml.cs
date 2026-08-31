@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using LibVLCSharp.Shared;
 
 namespace RtspCameraSetup;
 
@@ -11,14 +10,10 @@ public partial class MainWindow : Window
 {
     private readonly AppConfig _config;
 
-    private LibVLC? _libVlc;
-    private MediaPlayer? _player;
 
     /// <summary>Kept alive for as long as it is playing - see StartPreview.</summary>
-    private Media? _media;
 
     /// <summary>Pulls frames into a WPF bitmap instead of an embedded video window.</summary>
-    private VideoRenderer? _renderer;
 
     /// <summary>Low-latency preview path; null when the libvlc engine is in use.</summary>
     private FfmpegVideoSource? _ffmpeg;
@@ -148,50 +143,18 @@ public partial class MainWindow : Window
 
     private void InitialiseVideo()
     {
-        // Core.Initialize() already ran in App.OnStartup - it has to happen before
-        // any VideoView exists.
-        if (App.VideoInitError is { } startupError)
+        // ffmpeg is the only engine. It is bundled beside the executable by the
+        // publish, and looked up on PATH as a fallback for a plain build.
+        if (FfmpegVideoSource.Resolve(_config.Preview.FfmpegPath) is { } path)
         {
-            DisablePreview(startupError);
+            _ffmpeg = new FfmpegVideoSource(VideoImage, _config.Preview);
             return;
         }
 
-        if (_config.Preview.UsesFfmpeg)
-        {
-            if (FfmpegVideoSource.Resolve(_config.Preview.FfmpegPath) is not null)
-            {
-                _ffmpeg = new FfmpegVideoSource(VideoImage, _config.Preview);
-                return;
-            }
-
-            if (!_config.Preview.FallBackToVlc)
-            {
-                DisablePreview($"ffmpeg not found ('{_config.Preview.FfmpegPath}')");
-                return;
-            }
-
-            SetStatus($"ffmpeg not found ('{_config.Preview.FfmpegPath}') - falling back to the VLC engine.");
-        }
-
-        try
-        {
-            var args = new List<string> { "--no-osd", "--quiet" };
-
-            if (!string.IsNullOrWhiteSpace(_config.VideoOutput))
-                args.Add($"--vout={_config.VideoOutput.Trim()}");
-
-            _libVlc = new LibVLC(args.ToArray());
-            _player = new MediaPlayer(_libVlc);
-
-            // Frames are pulled into a WriteableBitmap rather than drawn by libvlc
-            // into an embedded child window - see VideoRenderer for why.
-            _renderer = new VideoRenderer(VideoImage);
-            _renderer.Attach(_player);
-        }
-        catch (Exception ex)
-        {
-            DisablePreview(ex.Message);
-        }
+        DisablePreview(
+            $"ffmpeg not found ('{_config.Preview.FfmpegPath}'). It ships beside the " +
+            "executable; install one with 'winget install Gyan.FFmpeg.Essentials' or " +
+            "copy ffmpeg.exe next to CameraSetup.exe.");
     }
 
     /// <summary>Configuration still works without a video engine, so degrade rather than fail.</summary>
@@ -3106,7 +3069,7 @@ public partial class MainWindow : Window
 
         if (confirm != MessageBoxResult.OK) return;
 
-        var wasPlaying = _player?.IsPlaying == true;
+        var wasPlaying = _ffmpeg?.IsRunning == true;
 
         try
         {
@@ -3206,7 +3169,7 @@ public partial class MainWindow : Window
         // Drop the RTSP stream first. The Video tab has always done this before an
         // encoder write; provisioning used to write the encoder with the preview still
         // pulling frames, which is the one difference between the two paths.
-        var wasPlaying = _player?.IsPlaying == true;
+        var wasPlaying = _ffmpeg?.IsRunning == true;
 
         // A preset carrying the address it is already on does not move anything.
         var presetAddress = snapshot.Network?["addr"]?.ToString();
@@ -3501,7 +3464,7 @@ public partial class MainWindow : Window
         body["gop"] = gop;
         body["quality"] = quality.Value;
 
-        var wasPlaying = _player?.IsPlaying == true;
+        var wasPlaying = _ffmpeg?.IsRunning == true;
 
         try
         {
@@ -3541,7 +3504,7 @@ public partial class MainWindow : Window
         if (!_uiReady || _suppressUiEvents) return;
         UpdateStreamUrlText();
 
-        if (_player?.IsPlaying == true)
+        if (_ffmpeg?.IsRunning == true)
             StartPreview();
     }
 
@@ -3567,76 +3530,20 @@ public partial class MainWindow : Window
 
     private void StartPreview()
     {
-        if (_previewDisabled || _profile is null) return;
+        if (_previewDisabled || _ffmpeg is null || _profile is null) return;
 
         var url = CurrentStreamUrl();
         if (url is null) return;
 
         StopPreview();
 
-        if (_ffmpeg is not null)
-        {
-            var (width, height) = UseSubStream ? _subSize : _mainSize;
-            var tcp = string.Equals(_profile.Rtsp.Transport, "tcp", StringComparison.OrdinalIgnoreCase);
+        var (width, height) = UseSubStream ? _subSize : _mainSize;
+        var tcp = string.Equals(_profile.Rtsp.Transport, "tcp", StringComparison.OrdinalIgnoreCase);
 
-            _ffmpeg.Start(url, width, height, tcp);
-            SetStatus($"Playing {(UseSubStream ? "sub" : "main")} stream from {_client!.Host} ({width}x{height}, ffmpeg)");
-            return;
-        }
-
-        if (_libVlc is null || _player is null) return;
-
-        // The Media must outlive Play(). Disposing it here - which "using" would do
-        // the moment this method returns - leaves the player with whatever frames
-        // were already buffered and then stalls: a single frame, then a frozen
-        // picture. Hold the reference and dispose the previous one instead.
-        var media = new Media(_libVlc, new Uri(url), BuildMediaOptions(_profile.Rtsp));
-
-        _player.Play(media);
-
-        _media?.Dispose();
-        _media = media;
-
-        SetStatus($"Playing {(UseSubStream ? "sub" : "main")} stream from {_client!.Host}");
+        _ffmpeg.Start(url, width, height, tcp);
+        SetStatus($"Playing {(UseSubStream ? "sub" : "main")} stream from {_client!.Host} ({width}x{height})");
     }
 
-    /// <summary>
-    /// Latency comes mostly from buffering, not decoding. VLC's stock behaviour is
-    /// tuned for smooth playback of remote streams; for a local camera we want the
-    /// opposite trade - show the newest frame, tolerate the occasional judder.
-    /// </summary>
-    private static string[] BuildMediaOptions(RtspSpec spec)
-    {
-        // Clamped: below this the camera's picture freezes on the first frame while
-        // libvlc carries on decoding, which looks exactly like a broken preview.
-        var caching = Math.Max(RtspSpec.MinimumCachingMs, spec.NetworkCachingMs);
-
-        var options = new List<string>
-        {
-            $":network-caching={caching}",
-            $":live-caching={caching}"
-        };
-
-        options.Add(string.Equals(spec.Transport, "tcp", StringComparison.OrdinalIgnoreCase)
-            ? ":rtsp-tcp"
-            : ":no-rtsp-tcp");
-
-        if (spec.LowLatency)
-        {
-            options.AddRange(new[]
-            {
-                ":clock-jitter=0",      // do not wait to smooth arrival jitter
-                ":clock-synchro=0",     // do not resync to the stream clock
-                ":drop-late-frames",    // show current, never replay a backlog
-                ":skip-frames",
-                ":no-audio",            // nothing to play, and it forces A/V sync work
-                ":avcodec-hw=any"       // hardware H.265 decode where available
-            });
-        }
-
-        options.AddRange(spec.ExtraOptions);
-        return options.ToArray();
-    }
 
     /// <summary>
     /// The frame counters are no longer shown on the window. A stalled preview is
@@ -3645,11 +3552,9 @@ public partial class MainWindow : Window
     /// </summary>
     private void UpdatePreviewStats()
     {
-        long drawn;
+        if (_ffmpeg is null) return;
 
-        if (_ffmpeg is not null) drawn = _ffmpeg.FramesRendered;
-        else if (_renderer is not null) drawn = _renderer.FramesRendered;
-        else return;
+        var drawn = _ffmpeg.FramesRendered;
 
         var step = drawn - _lastRendered;
         _lastRendered = drawn;
@@ -3660,13 +3565,7 @@ public partial class MainWindow : Window
             SetStatus("Preview has stopped receiving frames.");
     }
 
-    private void StopPreview()
-    {
-        _ffmpeg?.Stop();
-
-        if (_player is null) return;
-        if (_player.IsPlaying) _player.Stop();
-    }
+    private void StopPreview() => _ffmpeg?.Stop();
 
     // ================================================================= misc
 
@@ -3705,10 +3604,6 @@ public partial class MainWindow : Window
 
         StopPreview();
         _ffmpeg?.Dispose();
-        _renderer?.Dispose();
-        _media?.Dispose();
-        _player?.Dispose();
-        _libVlc?.Dispose();
         _client?.Dispose();
     }
 }

@@ -13,19 +13,17 @@
 
   "preview": {
     "$comment": [
-      "engine: 'ffmpeg' pipes raw frames from an ffmpeg subprocess; 'vlc' uses the",
-      "embedded libvlc engine. ffmpeg is the default because libvlc refuses to show a",
-      "live picture below ~300 ms of buffering on this camera family, which puts a",
-      "floor under preview latency. ffmpeg has no such floor.",
+      "Preview decodes with ffmpeg. It is the only engine: the libvlc fallback was",
+      "removed once the build began bundling ffmpeg, because it was 198 MB of the",
+      "payload for a path that was never taken and could not show a live picture",
+      "below ~300 ms of buffering on this camera family.",
       "",
-      "ffmpegPath is resolved next to the executable first, then on PATH. If it is",
-      "missing the app falls back to the VLC engine unless fallBackToVlc is false.",
-      "extraInputArgs are inserted before -i, e.g. [ \"-max_delay\", \"0\" ]."
+      "ffmpegPath is resolved next to the executable first, then on PATH. The",
+      "publish drops an ffmpeg.exe into the output, so the first lookup normally",
+      "wins. extraInputArgs are inserted before -i, e.g. [ \"-max_delay\", \"0\" ]."
     ],
-    "engine": "ffmpeg",
     "ffmpegPath": "ffmpeg.exe",
-    "extraInputArgs": [],
-    "fallBackToVlc": true
+    "extraInputArgs": []
   },
 
   "discovery": {
@@ -125,18 +123,7 @@
         "mainPath": "/stream1",
         "subPath": "/stream0",
         "passwordDerivation": "hmacsha1-of-md5hex",
-        "transport": "tcp",
-
-        "$comment_caching": [
-          "Do NOT set below 300. Measured on this camera: at 100 ms the picture",
-          "freezes on the first frame while libvlc keeps decoding normally, on both",
-          "TCP and UDP - it looks exactly like a broken preview. 300 ms and above is",
-          "live. The app clamps this to 300 regardless of what is set here."
-        ],
-        "networkCachingMs": 300,
-
-        "lowLatency": true,
-        "extraOptions": []
+        "transport": "tcp"
       },
 
       "network": {

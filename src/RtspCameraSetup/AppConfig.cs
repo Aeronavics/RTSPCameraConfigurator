@@ -10,13 +10,6 @@ namespace RtspCameraSetup;
 /// </summary>
 public sealed class AppConfig
 {
-    /// <summary>
-    /// libvlc video output module, e.g. "directx", "gl", "direct3d11". Empty lets
-    /// libvlc choose. This is a global libvlc setting, not per-camera: it is applied
-    /// once when the engine starts. Some drivers render only the first frame into an
-    /// embedded window under the default output, and naming a different one fixes it.
-    /// </summary>
-    [JsonPropertyName("videoOutput")] public string VideoOutput { get; set; } = "";
 
     [JsonPropertyName("preview")] public PreviewSpec Preview { get; set; } = new();
 
@@ -70,13 +63,6 @@ public sealed class AppConfig
 /// <summary>How the preview is decoded and drawn.</summary>
 public sealed class PreviewSpec
 {
-    /// <summary>
-    /// "ffmpeg" for the low-latency subprocess pipeline, "vlc" for the embedded
-    /// libvlc engine. ffmpeg is the default: libvlc will not present a live picture
-    /// below roughly 300 ms of buffering on this camera family, which puts a floor
-    /// under latency that ffmpeg does not have.
-    /// </summary>
-    [JsonPropertyName("engine")] public string Engine { get; set; } = "ffmpeg";
 
     /// <summary>Executable name or full path. Resolved next to the app, then on PATH.</summary>
     [JsonPropertyName("ffmpegPath")] public string FfmpegPath { get; set; } = "ffmpeg.exe";
@@ -84,10 +70,7 @@ public sealed class PreviewSpec
     /// <summary>Extra ffmpeg INPUT arguments, inserted before -i.</summary>
     [JsonPropertyName("extraInputArgs")] public List<string> ExtraInputArgs { get; set; } = new();
 
-    /// <summary>Fall back to libvlc if ffmpeg cannot be found, rather than showing nothing.</summary>
-    [JsonPropertyName("fallBackToVlc")] public bool FallBackToVlc { get; set; } = true;
 
-    public bool UsesFfmpeg => string.Equals(Engine, "ffmpeg", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class DiscoverySpec
@@ -186,28 +169,11 @@ public sealed class RtspSpec
     /// <summary>"tcp" is loss-free but adds a little latency; "udp" is leaner on a clean LAN.</summary>
     [JsonPropertyName("transport")] public string Transport { get; set; } = "tcp";
 
-    /// <summary>
-    /// Receive buffer, and the single biggest latency knob - VLC's own default is
-    /// 1000 ms.
-    ///
-    /// Do not drop this below <see cref="MinimumCachingMs"/>. Measured on the test
-    /// camera: at 100 ms the picture freezes on the first frame while decoding
-    /// continues normally, on both TCP and UDP. 300 ms and above is live. The value
-    /// is clamped when the options are built.
-    /// </summary>
-    [JsonPropertyName("networkCachingMs")] public int NetworkCachingMs { get; set; } = 300;
 
     /// <summary>Floor below which this camera family stops presenting new frames.</summary>
     public const int MinimumCachingMs = 300;
 
-    /// <summary>
-    /// Disables VLC's clock synchronisation and frame-drop damping, and enables
-    /// hardware decoding. Trades smoothing for responsiveness.
-    /// </summary>
-    [JsonPropertyName("lowLatency")] public bool LowLatency { get; set; } = true;
 
-    /// <summary>Extra raw libvlc options, e.g. ":avcodec-threads=1". Appended last.</summary>
-    [JsonPropertyName("extraOptions")] public List<string> ExtraOptions { get; set; } = new();
 }
 
 public sealed class NetworkSpec

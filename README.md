@@ -25,27 +25,17 @@ Nothing else needs installing — NuGet restores the rest on first build.
 
 | Package | Why |
 |---|---|
-| `LibVLCSharp` 3.8.2 | The fallback preview engine. |
-| `LibVLCSharp.WPF` 3.8.2 | Its `VideoView`, hosted through `WindowsFormsHost` — which is why `UseWindowsForms` is on in a WPF project. |
-| `VideoLAN.LibVLC.Windows` 3.0.21 | Bundles libvlc itself, so **VLC does not have to be installed** on the target machine. It also decodes H.265, which these cameras emit. |
+| _(none)_ | The app has no NuGet dependencies. libvlc was removed once ffmpeg became the only engine: 198 MB of the payload for a fallback that was never used by default and was measurably worse. |
 
 ### To run
 
-The publish is self-contained, so the target machine needs **neither .NET nor VLC**.
+The publish is self-contained and **bundles ffmpeg**, so a published folder needs
+nothing installed on the target machine - not .NET, not VLC, not ffmpeg.
 
-**ffmpeg is the one thing worth adding.** It is the default preview engine and is
-*not* bundled:
-
-```bash
-winget install Gyan.FFmpeg
-```
-
-It is resolved as `ffmpeg.exe` next to the executable first, then from `PATH`. If it
-is missing the app falls back to the libvlc engine automatically (set
-`preview.fallBackToVlc` to `false` in `cameras.json` to make its absence an error
-instead). The fallback works, but libvlc will not show a live picture on this camera
-family below about 300 ms of buffering, which puts a floor under preview latency that
-ffmpeg does not have — see **Preview latency** below.
+ffmpeg is the only preview engine. It is resolved as `ffmpeg.exe` next to the
+executable first, then from `PATH`. The build copies one into the publish output, so
+the beside-the-executable lookup normally wins. Without it the app still runs and
+still configures cameras - it just says so and shows no picture.
 
 Everything else is just network: the camera has to be on an address this machine can
 route to. If it is not, the app can borrow a temporary address for you — see
@@ -83,7 +73,7 @@ want to drive it directly.
 dotnet build "src/RtspCameraSetup/RtspCameraSetup.csproj" -c Release
 ```
 
-To produce a self-contained build that needs neither .NET nor VLC installed on the
+To produce a self-contained build that needs nothing installed on the target
 target machine:
 
 ```bash
@@ -93,12 +83,10 @@ dotnet publish "src/RtspCameraSetup/RtspCameraSetup.csproj" -c Release
 Copy the whole `bin/Release/net9.0-windows/win-x64/publish/` folder to the target
 machine and run `CameraSetup.exe`.
 
-**Deploy the folder, not just the exe.** `PublishSingleFile` is deliberately off:
-libvlc loads `libvlc.dll`, `libvlccore.dll` and its 300-odd `plugins/` from
-`libvlc\win-x64\` on disk, and the single-file bundler relocates them, so preview
-fails at runtime with *"Failed to load required native libraries"*. The app degrades
-gracefully if that happens — configuration still works and the preview area explains
-why — but the folder layout is the supported one.
+**Deploy the folder, not just the exe.** `PublishSingleFile` is deliberately off: the
+app looks for `ffmpeg.exe` beside itself, and the single-file bundler extracts to a
+temporary directory where that lookup no longer finds it. The publish also drops
+`ffmpeg.exe` and its licence into the output, so the folder is the complete app.
 
 `cameras.json` sits next to the executable and is read at startup. Edit it in place —
 no rebuild needed.
@@ -251,9 +239,10 @@ Verified on hardware: `DESCRIBE` with `admin` / `123456` is refused; the same re
 with the derived value returns `200 OK`. For `admin` / `123456` the derived password
 is `33e97a6101dce4c3ad589754e79b14ad acc52d45` (without the space).
 
-The stream is **H.265/HEVC** by default, which is why preview uses LibVLC rather than
-a managed RTSP library — most of those are H.264-only. LibVLC decodes H.264 and H.265
-alike and picks the codec up from the SDP, so no client change is needed either way.
+The stream is **H.265/HEVC** by default, which is why preview decodes with ffmpeg
+rather than a managed RTSP library - most of those are H.264-only. ffmpeg decodes
+H.264 and H.265 alike and picks the codec up from the SDP, so no client change is
+needed either way.
 
 ### RTSP paths — the trap
 
@@ -700,42 +689,29 @@ responsiveness:
 
 ```jsonc
 "rtsp": {
-  "transport": "tcp",
-  "networkCachingMs": 300,
-  "lowLatency": true,
-  "extraOptions": []
+  "transport": "tcp"
 }
 ```
 
-> **Never set `networkCachingMs` below 300.** At 100 ms this camera's picture freezes
-> on the first frame while libvlc carries on decoding at full rate — it looks exactly
-> like a broken preview, and it happens on both TCP and UDP. Measured by hashing
-> decoded frames: 100 ms gives 1 distinct frame in 129; 300 ms gives 189 in 189. The
-> app clamps the value to 300 regardless of the config, so this cannot be
-> reintroduced by editing the file.
-
-`networkCachingMs` is the main latency knob — VLC's own default is 1000 ms, so 300 is
-still well under stock. `lowLatency` adds `clock-jitter=0`, `clock-synchro=0`,
-`drop-late-frames`, `skip-frames`, `no-audio` and hardware decoding; these were
-measured to be safe at 300 ms and above. Anything in `extraOptions` is appended raw.
+> **A finding worth keeping, even though the setting is gone.** The libvlc engine
+> could not be driven below ~300 ms of buffering: at 100 ms this camera's picture
+> froze on the first frame while libvlc carried on decoding at full rate, on both TCP
+> and UDP. Measured by hashing decoded frames - 100 ms gave 1 distinct frame in 129;
+> 300 ms gave 189 in 189. That floor is why ffmpeg became the default and eventually
+> the only engine. `networkCachingMs`, `lowLatency` and `extraOptions` were removed
+> along with it, since nothing reads them any more.
 
 ### Diagnosing a frozen preview
 
-The line under the picture reports what is actually happening:
+The counters are no longer drawn under the picture. A stalled preview is reported in
+the status bar instead, and only once frames have started and then stopped - ffmpeg
+chatters on start-up and that is self-correcting.
 
-```
-20 fps drawn   vlc 21 fps   locks 330   frame 962F5FC7
-```
-
-- **fps drawn** — frames written into the WPF bitmap
-- **vlc fps** — frames libvlc reports presenting
-- **locks** — times libvlc asked for the frame buffer
-- **frame** — a hash of the current picture's pixels
-
-If `frame` stops changing while the counters climb, frames are arriving but the
-*content* is identical — that is the caching fault above, not a rendering problem.
 A still scene and a frozen stream are indistinguishable by eye, which is precisely
-what makes this worth measuring rather than guessing at.
+what makes this worth measuring rather than guessing at. The hard-won finding is in
+`FfmpegVideoSource.BuildArguments`: without `-fps_mode passthrough` the rawvideo
+muxer invents a frame rate and duplicates frames to fill it, and the preview falls
+permanently behind decoding frames that do not exist.
 
 Two things matter more than client tuning:
 
@@ -745,22 +721,28 @@ Two things matter more than client tuning:
 - **Substream.** Lower resolution decodes and traverses the network faster. If you
   only need the preview to judge framing and exposure, the substream is quicker.
 
-The preview never uses LibVLCSharp's `VideoView`. Whichever engine decodes, frames end
-up in a `WriteableBitmap`, so the picture is ordinary WPF content: it scales with
-`Stretch="Uniform"`, layers normally, and carries no embedded child window. That also
-removed a whole class of hosting problems — an unrealised `VideoView` could take the
-process down natively, with no managed exception and no crash log.
+Frames end up in a `WriteableBitmap`, so the picture is ordinary WPF content: it
+scales with `Stretch="Uniform"`, layers normally, and carries no embedded child
+window. That also removed a whole class of hosting problems - the libvlc `VideoView`
+this replaced could take the process down natively, with no managed exception and no
+crash log.
 
-### Two engines
+### One engine
 
-`preview.engine` selects between them:
+Preview pipes raw BGRA frames out of an `ffmpeg` subprocess with
+`-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0`, and needs
+`ffmpeg.exe` beside the app or on `PATH`.
 
-- **`ffmpeg`** (default) — pipes raw BGRA frames out of an `ffmpeg` subprocess with
-  `-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0`. Needs
-  `ffmpeg.exe` beside the app or on PATH; falls back to VLC if absent, unless
-  `fallBackToVlc` is false.
-- **`vlc`** — libvlc via its raw video callbacks, subject to the 300 ms caching floor
-  described above.
+There used to be a second, libvlc-based engine behind `preview.engine`, kept as a
+fallback for machines without ffmpeg. It was removed once the build started bundling
+ffmpeg: it was **198 MB of a 368 MB payload** across 844 files, it forced
+`UseWindowsForms` on in a WPF project (for `VideoView`'s `WindowsFormsHost`), and it
+was the *worse* engine - subject to the 300 ms caching floor described above, which is
+why ffmpeg was made the default in the first place. Keeping a slower engine at that
+price, for a case the build no longer produces, stopped making sense.
+
+`-fps_mode passthrough` is load-bearing, not cosmetic - see the note in
+`FfmpegVideoSource.BuildArguments`.
 
 ### Measured latency, and a correction
 

@@ -42,6 +42,9 @@ public sealed class FfmpegVideoSource : IDisposable
     private volatile bool _pendingFrame;
     private bool _disposed;
 
+    /// <summary>True while the decoder process is up and frames are being pumped.</summary>
+    public bool IsRunning => _process is { HasExited: false };
+
     public long FramesRendered { get; private set; }
     public uint LastFrameHash { get; private set; }
     public string? LastError { get; private set; }
