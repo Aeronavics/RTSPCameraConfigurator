@@ -201,6 +201,27 @@ public sealed class NetworkScope
             _added.RemoveAll(planned.Contains);
             WriteJournal();
             covered.Clear();
+            return covered;
+        }
+
+        // Trust the adapter, not the helper. netsh has been seen to report success
+        // while adding nothing, and claiming a subnet is searchable when it is not
+        // sends the user hunting for a camera that could never have answered.
+        var missing = planned.Where(a => !HasAddress(a.Address)).ToList();
+
+        if (missing.Count > 0)
+        {
+            foreach (var gone in missing)
+            {
+                _added.Remove(gone);
+                var subnet = Prefix24(gone.Address);
+                if (subnet is not null) covered.Remove(subnet);
+            }
+
+            WriteJournal();
+
+            error ??= $"the address was accepted but did not appear on '{interfaceAlias}' " +
+                      $"({string.Join(", ", missing.Select(m => m.Address))})";
         }
 
         return covered;
@@ -294,26 +315,47 @@ public sealed class NetworkScope
     /// <summary>
     /// Runs the netsh commands as administrator. One prompt covers the whole batch;
     /// when already elevated, no prompt appears at all.
+    ///
+    /// Elevation needs ShellExecute, which cannot redirect output - so the commands go
+    /// into a temporary script that logs to a file and returns the first failure's
+    /// exit code. The previous version chained the commands with "&amp;" and ended with
+    /// "exit /b 0", then ignored the exit code entirely: every failure looked like
+    /// success, so the app reported "Borrowed an address ..." while nothing had been
+    /// added to the adapter.
     /// </summary>
     private static bool RunElevated(IReadOnlyList<string> commands, out string? error)
     {
         error = null;
+        if (commands.Count == 0) return true;
 
-        var script = new StringBuilder();
-        foreach (var command in commands) script.Append(command).Append(" & ");
-        script.Append("exit /b 0");
-
-        var psi = new ProcessStartInfo("cmd.exe", $"/c {script}")
-        {
-            UseShellExecute = true,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden
-        };
-
-        if (!IsElevated) psi.Verb = "runas"; // triggers the UAC prompt
+        var stamp = Guid.NewGuid().ToString("N");
+        var script = Path.Combine(Path.GetTempPath(), $"rtspcam-netsh-{stamp}.cmd");
+        var log = Path.Combine(Path.GetTempPath(), $"rtspcam-netsh-{stamp}.log");
 
         try
         {
+            var text = new StringBuilder();
+            text.AppendLine("@echo off");
+
+            foreach (var command in commands)
+            {
+                text.AppendLine($"{command} >> \"{log}\" 2>&1");
+                // Stop at the first failure rather than pressing on and reporting the
+                // last command's result.
+                text.AppendLine("if errorlevel 1 exit /b 1");
+            }
+
+            text.AppendLine("exit /b 0");
+            File.WriteAllText(script, text.ToString());
+
+            var psi = new ProcessStartInfo("cmd.exe", $"/c \"{script}\"")
+            {
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            if (!IsElevated) psi.Verb = "runas"; // triggers the UAC prompt
+
             using var process = Process.Start(psi);
             if (process is null)
             {
@@ -321,8 +363,16 @@ public sealed class NetworkScope
                 return false;
             }
 
-            process.WaitForExit(20000);
-            return true;
+            if (!process.WaitForExit(20000))
+            {
+                error = "the elevated helper did not finish in time";
+                return false;
+            }
+
+            if (process.ExitCode == 0) return true;
+
+            error = ReadLog(log) ?? $"the elevated helper failed (exit code {process.ExitCode})";
+            return false;
         }
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
@@ -334,5 +384,45 @@ public sealed class NetworkScope
             error = ex.Message;
             return false;
         }
+        finally
+        {
+            TryDelete(script);
+            TryDelete(log);
+        }
     }
+
+    /// <summary>netsh's own words are far more useful than an exit code.</summary>
+    private static string? ReadLog(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+
+            var lines = File.ReadAllLines(path)
+                .Select(l => l.Trim())
+                .Where(l => l.Length > 0)
+                .ToList();
+
+            return lines.Count == 0 ? null : string.Join(" ", lines);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* temp file */ }
+    }
+
+    /// <summary>
+    /// Whether the adapter really carries this address now.
+    ///
+    /// The authoritative check: netsh can report success and still leave nothing
+    /// behind, so what the app tells the user is based on the adapter's own state
+    /// rather than on the helper's exit code.
+    /// </summary>
+    private static bool HasAddress(string address) =>
+        LocalAddresses().Any(a => string.Equals(a, address, StringComparison.Ordinal));
 }
