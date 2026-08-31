@@ -48,8 +48,10 @@ DisableDirPage=no
 AllowNoIcons=yes
 
 ; Per-user: no UAC prompt, and the install folder stays writable by the app.
+; No PrivilegesRequiredOverridesAllowed: an all-users install lands in Program
+; Files, where the app cannot rewrite its own cameras.json, so offering the
+; choice only offers a broken one.
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
 
 ; The payload is a self-contained .NET publish plus the libvlc tree, so it is
 ; x64-only and large. LZMA2 with a big dictionary takes the ~370 MB down a long way.
@@ -95,6 +97,22 @@ Source: "{#Payload}\presets\Generic.json"; DestDir: "{app}\presets"; Flags: only
 ; ffmpeg and its licence are already in the payload: the publish bundles them,
 ; so a published folder is a complete app on its own and the installer has no
 ; special case for them.
+
+[InstallDelete]
+; Remove what earlier versions installed and this one no longer ships. Inno only
+; tracks files it installs, so without this an upgrade LAYERS the new build over
+; the old: upgrading a v1.0 install left its 198 MB libvlc tree in place and the
+; folder grew to 485 MB.
+Type: filesandordirs; Name: "{app}\libvlc"
+Type: files; Name: "{app}\LibVLCSharp.dll"
+Type: files; Name: "{app}\LibVLCSharp.WPF.dll"
+
+; The executable was renamed, so the old one would otherwise linger and keep
+; working from stale shortcuts.
+Type: files; Name: "{app}\CameraSetup.exe"
+Type: files; Name: "{app}\CameraSetup.dll"
+Type: files; Name: "{app}\CameraSetup.deps.json"
+Type: files; Name: "{app}\CameraSetup.runtimeconfig.json"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

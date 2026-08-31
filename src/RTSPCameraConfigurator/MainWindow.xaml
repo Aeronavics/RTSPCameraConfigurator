@@ -36,7 +36,7 @@
         <!-- ============================== menu ============================= -->
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
-                <MenuItem x:Name="ExportButton" Header="_Export camera parameters..."
+                <MenuItem x:Name="ExportButton" Header="_Save camera parameters..."
                           Click="OnExportClicked"
                           ToolTip="Save the connected camera's image and encoder settings to a file"/>
                 <MenuItem x:Name="ImportButton" Header="_Import camera parameters..."
