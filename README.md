@@ -10,6 +10,49 @@ firmware `V1.16.39-20250721`).
 
 ---
 
+## Dependencies
+
+### To build
+
+| | |
+|---|---|
+| Windows x64 | It is a WPF app; there is no cross-platform build. |
+| .NET 9 SDK | `winget install Microsoft.DotNet.SDK.9` |
+
+Nothing else needs installing — NuGet restores the rest on first build.
+
+**NuGet packages**, all pinned in the csproj:
+
+| Package | Why |
+|---|---|
+| `LibVLCSharp` 3.8.2 | The fallback preview engine. |
+| `LibVLCSharp.WPF` 3.8.2 | Its `VideoView`, hosted through `WindowsFormsHost` — which is why `UseWindowsForms` is on in a WPF project. |
+| `VideoLAN.LibVLC.Windows` 3.0.21 | Bundles libvlc itself, so **VLC does not have to be installed** on the target machine. It also decodes H.265, which these cameras emit. |
+
+### To run
+
+The publish is self-contained, so the target machine needs **neither .NET nor VLC**.
+
+**ffmpeg is the one thing worth adding.** It is the default preview engine and is
+*not* bundled:
+
+```bash
+winget install Gyan.FFmpeg
+```
+
+It is resolved as `ffmpeg.exe` next to the executable first, then from `PATH`. If it
+is missing the app falls back to the libvlc engine automatically (set
+`preview.fallBackToVlc` to `false` in `cameras.json` to make its absence an error
+instead). The fallback works, but libvlc will not show a live picture on this camera
+family below about 300 ms of buffering, which puts a floor under preview latency that
+ffmpeg does not have — see **Preview latency** below.
+
+Everything else is just network: the camera has to be on an address this machine can
+route to. If it is not, the app can borrow a temporary address for you — see
+**Subnets this machine cannot reach**.
+
+---
+
 ## Running it
 
 Double-click **`run.cmd`** in the repo root, or run it from a terminal:
@@ -484,8 +527,37 @@ the list in step by itself — there is no Scan button to press.
 3. The **preview is always on screen**, above the settings tabs — you can watch the
    picture while dragging a slider, rather than switching away from it. Drag the
    splitter to trade preview size against panel size.
-4. **Image Settings** edits the picture; **Stream** sets codec, resolution and
-   bitrate; **Network** changes addressing; **Device** shows firmware details.
+4. **Everything writes as you change it.** There is no Apply button: edits are sent
+   to the camera debounced a few hundred milliseconds after you stop. The Network tab
+   is the deliberate exception — address, mask, gateway and DNS move together, so it
+   keeps **Save** and **Revert**.
+
+### The tabs
+
+| Tab | What it holds |
+|---|---|
+| **Image Settings** | Brightness through to day/night behaviour, generated from `cameras.json`. |
+| **Detection** | One sub-tab per detector the camera has — Human, Motion, Alarm in, and on capable hardware Vehicle, Perimeter and Sound. Each has its linkages, output modes, a 7-day schedule, and a drawable region where the detector supports one. |
+| **OSD** | The date/time overlay and five text lines. |
+| **Services** | The smaller settings modules, one sub-tab each: Time/NTP, Recording, Privacy mask, Audio in and out, Email, FTP, RTSP, ONVIF, Snapshot, Timed snapshot, HTTP, Serial, Cloud (P2P), GB28181, Alarm centre. |
+| **Users** | The camera's own accounts — add, set password, delete. |
+| **Stream** | Codec, resolution, frame rate and bitrate for the main and sub streams. |
+| **Network** | Addressing, plus **All Net Connect**, **IP adaptive** and **DHCP**. |
+| **Device** | Firmware details, reboot and factory reset. |
+
+**Tabs you do not see are features the camera does not have.** Every detector,
+service and linkage is gated on the device's `system_function` capability word, and
+the generated tabs are rebuilt whenever you select a camera with a different profile
+or capability set — so the UI always describes the camera in front of you rather than
+the last one you touched.
+
+### Drawing a region
+
+Detection regions and the privacy mask share one editor: **Edit region…** opens the
+current preview frame, and you drag rectangles onto it. Up to four; none means the
+whole image. The firmware stores them normalised across the frame rather than in
+pixels, so a region survives a resolution change and does not depend on the size of
+the window you drew it in.
 
 ### Menus
 
@@ -501,9 +573,17 @@ are preserved (it is rewritten via a temporary file, so a failure cannot truncat
 ### The preset bar
 
 The bar along the bottom is global rather than a tab: pick a preset and **Apply to
-selected camera**. The target is named beside the button — address, model, serial and
-what it is currently running — so there is never any doubt about what is about to
-change.
+selected camera**. It acts on the camera selected in the list and nothing else; the
+confirmation names the preset and, when the preset carries addressing, the address the
+camera is about to take.
+
+A preset now covers the **whole** camera — image, both encoders, addressing, and every
+module the app can configure — so applying one to a *different* camera is a wide
+change: it carries RTSP/ONVIF/HTTP ports, email and FTP credentials and GB28181 server
+settings along with the picture settings. Per-device identity never travels: `mac`,
+the P2P id and QR code, and the GB28181 SIP ids are stripped at capture, as are live
+readings such as `systime.time_sec`, which would otherwise set every camera's clock to
+the moment the preset was taken.
 
 Rows show what each camera is actually running (`H.265 1280x720 @ 20fps`), so you can
 see the fleet's state without connecting to anything.
@@ -526,9 +606,18 @@ messages.
 Default credentials for a camera with no saved login come from the matched profile's
 `auth.defaultUsername` / `auth.defaultPassword` in `cameras.json`.
 
-Changing the IP drops the connection by design — the app waits, then reconnects at
-the new address automatically. Switching to DHCP disconnects and asks you to re-scan,
-since the new address is not knowable in advance.
+Changing the IP drops the connection by design. The app follows the camera: the row
+it left is removed from the list, the new address is polled until it answers, and the
+camera is then selected and reconnected with the preview restarted — no clicking
+around. The same happens when a preset or parameter file carries a new address.
+
+A camera is never acknowledged when it accepts an address change; it takes the
+address and answers on the new one, but the request it arrived on simply never
+returns. That is expected, and is reported as a move rather than a failure.
+
+Switching to DHCP disconnects and asks you to re-scan, since the new address is not
+knowable in advance. A **factory reset** removes the camera from the list immediately,
+because the address goes with the settings.
 
 Unhandled errors are written to `%LOCALAPPDATA%\CameraSetup\crash.log` with full
 stack traces, and the dialog points at the file.
