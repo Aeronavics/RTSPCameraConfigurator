@@ -29,6 +29,12 @@
                 <TextBlock Text="seconds" VerticalAlignment="Center" Margin="6,0,0,0"/>
             </StackPanel>
 
+            <TextBlock Text="Adapter to borrow an address on" FontWeight="SemiBold"
+                       Margin="0,16,0,4"/>
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#777" Margin="0,0,0,6"
+                       Text="Used only when a configured subnet cannot be reached from this machine. Automatic picks whichever adapter already carries the most addresses. A DHCP adapter has to be switched to a fixed address while the app runs, and is put back on exit."/>
+            <ComboBox x:Name="AdapterBox"/>
+
             <TextBlock TextWrapping="Wrap" Foreground="#777" FontSize="11" Margin="0,8,0,0"
                        Text="Saved to cameras.json. Comments and every other setting in that file are preserved."/>
 

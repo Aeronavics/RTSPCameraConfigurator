@@ -4,17 +4,42 @@ namespace RTSPCameraConfigurator;
 
 public partial class SettingsDialog : Window
 {
+    private const string AutomaticEntry = "Automatic  -  the adapter carrying the most addresses";
+
     public List<string> Subnets { get; private set; } = new();
     public bool Continuous { get; private set; }
     public int RefreshSeconds { get; private set; }
 
-    public SettingsDialog(IEnumerable<string> subnets, bool continuous, int refreshSeconds)
+    /// <summary>Empty means automatic - let NetworkScope pick.</summary>
+    public string InterfaceAlias { get; private set; } = "";
+
+    public SettingsDialog(IEnumerable<string> subnets, bool continuous, int refreshSeconds, string interfaceAlias)
     {
         InitializeComponent();
 
         SubnetsBox.Text = string.Join(Environment.NewLine, subnets);
         ContinuousCheck.IsChecked = continuous;
         IntervalBox.Text = refreshSeconds.ToString();
+
+        // "Automatic" first, then the adapters as they are now, so the choice can be
+        // made on what each one currently carries rather than on its name alone.
+        AdapterBox.Items.Add(AutomaticEntry);
+        foreach (var adapter in NetworkScope.Adapters()) AdapterBox.Items.Add(adapter);
+
+        AdapterBox.SelectedItem = AdapterBox.Items
+            .OfType<NetworkScope.Adapter>()
+            .FirstOrDefault(a => string.Equals(a.Alias, interfaceAlias, StringComparison.OrdinalIgnoreCase));
+
+        // A configured adapter that is not present right now must not be silently
+        // dropped, so it is offered as-is rather than falling back to automatic.
+        if (AdapterBox.SelectedItem is null && !string.IsNullOrWhiteSpace(interfaceAlias))
+        {
+            var missing = new NetworkScope.Adapter(interfaceAlias, "", "not present", false);
+            AdapterBox.Items.Add(missing);
+            AdapterBox.SelectedItem = missing;
+        }
+
+        AdapterBox.SelectedItem ??= AutomaticEntry;
 
         Loaded += (_, _) => SubnetsBox.Focus();
     }
@@ -57,6 +82,7 @@ public partial class SettingsDialog : Window
         Subnets = accepted;
         Continuous = ContinuousCheck.IsChecked == true;
         RefreshSeconds = seconds;
+        InterfaceAlias = AdapterBox.SelectedItem is NetworkScope.Adapter chosen ? chosen.Alias : "";
         DialogResult = true;
     }
 

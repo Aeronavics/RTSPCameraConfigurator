@@ -215,7 +215,9 @@ public partial class MainWindow : Window
     private void OnSubnetSettingsClicked(object sender, RoutedEventArgs e)
     {
         var discovery = _config.Discovery;
-        var dialog = new SettingsDialog(discovery.Subnets, discovery.Continuous, discovery.RefreshSeconds)
+        var dialog = new SettingsDialog(
+            _config.Discovery.Subnets, _config.Discovery.Continuous,
+            _config.Discovery.RefreshSeconds, _config.Discovery.InterfaceAlias)
         {
             Owner = this
         };
@@ -224,7 +226,8 @@ public partial class MainWindow : Window
 
         try
         {
-            ConfigFile.UpdateDiscovery(ConfigPath(), dialog.Subnets, dialog.Continuous, dialog.RefreshSeconds);
+            ConfigFile.UpdateDiscovery(ConfigPath(), dialog.Subnets, dialog.Continuous,
+                dialog.RefreshSeconds, dialog.InterfaceAlias);
         }
         catch (Exception ex)
         {

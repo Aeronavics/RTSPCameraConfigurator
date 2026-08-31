@@ -28,7 +28,8 @@ public static class ConfigFile
         string path,
         IEnumerable<string> subnets,
         bool continuous,
-        int refreshSeconds)
+        int refreshSeconds,
+        string interfaceAlias)
     {
         var root = JsonNode.Parse(File.ReadAllText(path), NodeOptions, DocumentOptions) as JsonObject
                    ?? throw new InvalidDataException($"{Path.GetFileName(path)} is not a JSON object.");
@@ -45,6 +46,7 @@ public static class ConfigFile
         discovery["subnets"] = list;
         discovery["continuous"] = continuous;
         discovery["refreshSeconds"] = refreshSeconds;
+        discovery["interfaceAlias"] = interfaceAlias;
 
         // Write via a temporary file so a failure part-way cannot leave a truncated
         // config that the app would refuse to start with next time.
