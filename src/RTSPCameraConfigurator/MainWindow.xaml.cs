@@ -3531,6 +3531,18 @@ public partial class MainWindow : Window
         StreamUrlText.Text = $"rtsp://{_client.Host}:{_profile.Rtsp.Port}{path}";
     }
 
+    /// <summary>
+    /// Caps the decoded frame size, preserving aspect ratio and never scaling up.
+    /// Dimensions are kept even, which the scaler wants.
+    /// </summary>
+    private static (int Width, int Height) PreviewSize((int Width, int Height) source, int maxHeight)
+    {
+        if (maxHeight <= 0 || source.Height <= maxHeight || source.Height == 0) return source;
+
+        var width = (int)Math.Round(source.Width * (double)maxHeight / source.Height);
+        return (Math.Max(2, width - (width % 2)), Math.Max(2, maxHeight - (maxHeight % 2)));
+    }
+
     private void StartPreview()
     {
         if (_previewDisabled || _ffmpeg is null || _profile is null) return;
@@ -3540,11 +3552,15 @@ public partial class MainWindow : Window
 
         StopPreview();
 
-        var (width, height) = UseSubStream ? _subSize : _mainSize;
+        var source = UseSubStream ? _subSize : _mainSize;
+        var (width, height) = PreviewSize(source, _config.Preview.MaxHeight);
         var tcp = string.Equals(_profile.Rtsp.Transport, "tcp", StringComparison.OrdinalIgnoreCase);
 
         _ffmpeg.Start(url, width, height, tcp);
-        SetStatus($"Playing {(UseSubStream ? "sub" : "main")} stream from {_client!.Host} ({width}x{height})");
+
+        var scaled = (width, height) != source ? $", shown at {width}x{height}" : "";
+        SetStatus($"Playing {(UseSubStream ? "sub" : "main")} stream from {_client!.Host} " +
+                  $"({source.Width}x{source.Height}{scaled})");
     }
 
 

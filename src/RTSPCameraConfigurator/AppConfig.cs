@@ -67,6 +67,16 @@ public sealed class PreviewSpec
     /// <summary>Executable name or full path. Resolved next to the app, then on PATH.</summary>
     [JsonPropertyName("ffmpegPath")] public string FfmpegPath { get; set; } = "ffmpeg.exe";
 
+    /// <summary>
+    /// Tallest frame the preview will decode. The stream is scaled down to this by
+    /// ffmpeg, which is far cheaper than pushing full-resolution frames through the
+    /// pipe and into a WriteableBitmap: measured on a 3840x2160 H.265 camera, full
+    /// resolution is 659 MB/s and 31.6 MB per frame, against 41 MB/s at 960x540. The
+    /// picture is displayed with Stretch="Uniform", so a smaller bitmap looks the
+    /// same. Never scales up. 0 disables scaling.
+    /// </summary>
+    [JsonPropertyName("maxHeight")] public int MaxHeight { get; set; } = 720;
+
     /// <summary>Extra ffmpeg INPUT arguments, inserted before -i.</summary>
     [JsonPropertyName("extraInputArgs")] public List<string> ExtraInputArgs { get; set; } = new();
 
@@ -79,6 +89,13 @@ public sealed class DiscoverySpec
     [JsonPropertyName("loginPath")] public string LoginPath { get; set; } = "/view/login.html";
     [JsonPropertyName("signature")] public string Signature { get; set; } = "realm = \"CAMERA\"";
     [JsonPropertyName("connectTimeoutMs")] public int ConnectTimeoutMs { get; set; } = 400;
+
+    /// <summary>
+    /// How long to wait for the login page from a host that accepted the connection.
+    /// This is the dominant cost on a busy subnet, where many devices answer on port
+    /// 80 but are not cameras. 3 s was generous enough to make a sweep feel stuck.
+    /// </summary>
+    [JsonPropertyName("pageTimeoutMs")] public int PageTimeoutMs { get; set; } = 1200;
     [JsonPropertyName("maxParallel")] public int MaxParallel { get; set; } = 128;
     [JsonPropertyName("defaultAddresses")] public List<string> DefaultAddresses { get; set; } = new();
 

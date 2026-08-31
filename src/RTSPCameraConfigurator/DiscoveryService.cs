@@ -104,12 +104,14 @@ public sealed class DiscoveryService : IDisposable
             ct.ThrowIfCancellationRequested();
             Report($"scanning {subnet}.0/24 ...");
 
-            var found = await Discovery.ScanAsync(subnet, _config.Discovery, null, null, ct);
-            foreach (var hit in found)
+            // Handled as each host answers rather than after the whole /24: the
+            // camera is usually found in the first second, and waiting for the
+            // remaining 253 probes made discovery look slow when it was not.
+            await Discovery.ScanAsync(subnet, _config.Discovery, null, async hit =>
             {
-                seen.Add(hit.Address);
+                lock (seen) seen.Add(hit.Address);
                 await EnsurePresentAsync(hit.Address, ct);
-            }
+            }, ct);
         }
 
         await AgeOutAsync(seen, ct);

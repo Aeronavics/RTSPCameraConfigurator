@@ -20,6 +20,13 @@ public sealed record DiscoveredCamera(string Address, string Description)
 /// </summary>
 public static class Discovery
 {
+    /// <summary>
+    /// Shared deliberately. A sweep probes 254 hosts; one HttpClient each churned
+    /// sockets and paid a fresh handshake per host. The per-request deadline comes
+    /// from a linked token instead of HttpClient.Timeout.
+    /// </summary>
+    private static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
+
     /// <summary>Local /24 prefixes ("192.168.1") for every up, non-loopback IPv4 interface.</summary>
     public static List<string> LocalSubnets()
     {
@@ -57,7 +64,7 @@ public static class Discovery
         string subnet,
         DiscoverySpec spec,
         IProgress<double>? progress = null,
-        Action<DiscoveredCamera>? onFound = null,
+        Func<DiscoveredCamera, Task>? onFound = null,
         CancellationToken ct = default)
     {
         var targets = new List<string>();
@@ -82,7 +89,10 @@ public static class Discovery
                 if (camera is not null)
                 {
                     lock (sync) found.Add(camera);
-                    onFound?.Invoke(camera);
+
+                    // Awaited here so a camera reaches the list the moment it
+                    // answers, rather than after the whole /24 has been swept.
+                    if (onFound is not null) await onFound(camera);
                 }
             }
             catch (OperationCanceledException) { throw; }
@@ -110,15 +120,18 @@ public static class Discovery
         if (!await IsPortOpenAsync(address, spec.ProbePort, spec.ConnectTimeoutMs, ct))
             return null;
 
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-
         string page;
         try
         {
+            using var pageTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            pageTimeout.CancelAfter(TimeSpan.FromMilliseconds(Math.Max(250, spec.PageTimeoutMs)));
             // Read bytes rather than GetStringAsync: this firmware family sends a
             // quoted charset ('utf-8') that .NET refuses to interpret.
-            using var res = await http.GetAsync($"http://{address}:{spec.ProbePort}{spec.LoginPath}", ct);
-            page = System.Text.Encoding.UTF8.GetString(await res.Content.ReadAsByteArrayAsync(ct));
+            using var res = await Http.GetAsync(
+                $"http://{address}:{spec.ProbePort}{spec.LoginPath}", pageTimeout.Token);
+
+            page = System.Text.Encoding.UTF8.GetString(
+                await res.Content.ReadAsByteArrayAsync(pageTimeout.Token));
         }
         catch
         {

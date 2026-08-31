@@ -23,7 +23,16 @@
       "wins. extraInputArgs are inserted before -i, e.g. [ \"-max_delay\", \"0\" ]."
     ],
     "ffmpegPath": "ffmpeg.exe",
-    "extraInputArgs": []
+    "extraInputArgs": [],
+
+    "$comment_maxheight": [
+      "Tallest frame the preview decodes; the stream is scaled down to it. Measured",
+      "on a 3840x2160 H.265 camera: full resolution pushes 659 MB/s and 31.6 MB per",
+      "frame through the pipe into the bitmap, against 41 MB/s at 960x540. On a",
+      "slower machine that is the difference between smooth and jerky, and the pane",
+      "is a few hundred pixels wide either way. Never scales up; 0 disables it."
+    ],
+    "maxHeight": 720
   },
 
   "discovery": {
@@ -31,6 +40,9 @@
     "loginPath": "/view/login.html",
     "signature": "realm = \"CAMERA\"",
     "connectTimeoutMs": 400,
+
+    "$comment_pagetimeout": "After a host accepts the connection, how long to wait for its login page before deciding it is not a camera. This dominates a sweep on a busy subnet where many devices answer on port 80; 3000 made discovery feel stuck.",
+    "pageTimeoutMs": 1200,
     "maxParallel": 128,
 
     "$comment_subnets": [
