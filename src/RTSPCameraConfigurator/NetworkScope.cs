@@ -331,7 +331,7 @@ public sealed class NetworkScope
     }
 
     /// <summary>One adapter, described well enough to choose between them.</summary>
-    public sealed record Adapter(string Alias, string Description, string Addresses, bool Dhcp)
+    public sealed record Adapter(string Alias, string Description, string Addresses, bool Dhcp, string Kind)
     {
         /// <summary>
         /// Says plainly what borrowing will do here. A DHCP adapter has to be
@@ -341,11 +341,26 @@ public sealed class NetworkScope
         public override string ToString()
         {
             var where = string.IsNullOrWhiteSpace(Addresses) ? "no IPv4 address" : Addresses;
-            return $"{Alias}  -  {where}{(Dhcp ? "  (DHCP)" : "")}";
+            return $"{Alias}  [{Kind}]  -  {where}{(Dhcp ? "  (DHCP)" : "")}";
         }
     }
 
-    /// <summary>Every adapter that is up, for the interface picker in Settings.</summary>
+    /// <summary>
+    /// Wired or wireless is the distinction that matters here: a laptop on Wi-Fi with
+    /// the camera on a wired link must borrow on the wired adapter, and picking by
+    /// address count alone gets that wrong.
+    /// </summary>
+    private static string Describe(NetworkInterfaceType type) => type switch
+    {
+        NetworkInterfaceType.Wireless80211 => "Wi-Fi",
+        NetworkInterfaceType.Ethernet or NetworkInterfaceType.GigabitEthernet
+            or NetworkInterfaceType.FastEthernetT or NetworkInterfaceType.FastEthernetFx => "Ethernet",
+        NetworkInterfaceType.Ppp => "PPP",
+        NetworkInterfaceType.Tunnel => "Tunnel",
+        _ => "Other"
+    };
+
+    /// <summary>Every adapter that is up, for the interface pickers.</summary>
     public static List<Adapter> Adapters()
     {
         var found = new List<Adapter>();
@@ -368,7 +383,8 @@ public sealed class NetworkScope
                     nic.Name,
                     nic.Description,
                     string.Join(", ", addresses),
-                    properties.GetIPv4Properties()?.IsDhcpEnabled ?? false));
+                    properties.GetIPv4Properties()?.IsDhcpEnabled ?? false,
+                    Describe(nic.NetworkInterfaceType)));
             }
         }
         catch

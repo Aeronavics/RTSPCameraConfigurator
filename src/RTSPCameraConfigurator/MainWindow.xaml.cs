@@ -296,27 +296,43 @@ public partial class MainWindow : Window
             return;
         }
 
-        var adapter = NetworkScope.PreferredInterface(discovery.InterfaceAlias);
-        if (adapter is null)
+        var adapters = NetworkScope.Adapters();
+        if (adapters.Count == 0)
         {
             SetStatus($"Cannot reach {list} and no suitable adapter was found.");
             return;
         }
 
-        var confirm = MessageBox.Show(
-            $"These subnets are configured but this machine has no address on them, so " +
-            $"nothing on them can be found:" + Environment.NewLine + Environment.NewLine +
-            $"    {list}" + Environment.NewLine + Environment.NewLine +
-            $"Add a temporary address on each to '{adapter}' for this session?" +
-            Environment.NewLine + Environment.NewLine +
-            "Existing addresses are left alone, and anything added is removed again when " +
-            "this app closes. Windows will ask for administrator permission.",
-            "Subnets not reachable", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        // Ask, rather than picking by address count. On a laptop on Wi-Fi with the
+        // camera on a wired link, the automatic choice is reliably the wrong one.
+        var picker = new AdapterDialog(
+            unreachable, adapters,
+            NetworkScope.PreferredInterface(discovery.InterfaceAlias) ?? "");
 
-        if (confirm != MessageBoxResult.OK)
+        // This runs from the constructor on the first pass, before the window exists
+        // to be owned - setting Owner then throws. Unowned is fine; it is still modal.
+        if (IsLoaded) picker.Owner = this;
+
+        if (picker.ShowDialog() != true)
         {
             SetStatus($"{list} will not be searched - no local address on them.");
             return;
+        }
+
+        var adapter = picker.SelectedAlias;
+
+        if (picker.Remember && !string.Equals(discovery.InterfaceAlias, adapter, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                ConfigFile.UpdateDiscovery(ConfigPath(), discovery.Subnets, discovery.Continuous,
+                    discovery.RefreshSeconds, adapter);
+                discovery.InterfaceAlias = adapter;
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Using {adapter}, but it could not be saved: {ex.Message}");
+            }
         }
 
         var covered = _networkScope.AddTemporaryAddresses(

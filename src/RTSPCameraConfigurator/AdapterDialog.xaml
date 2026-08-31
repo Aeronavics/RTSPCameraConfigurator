@@ -1,0 +1,55 @@
+<Window x:Class="RTSPCameraConfigurator.AdapterDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Subnets not reachable"
+        Width="620" SizeToContent="Height" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False"
+        FontFamily="Segoe UI" FontSize="13">
+
+    <DockPanel Margin="20,18,20,14">
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="OkButton" Content="Add address" IsDefault="True" Click="OnOk"
+                    MinWidth="110" Padding="12,5" Margin="0,0,8,0" FontWeight="SemiBold"/>
+            <Button Content="Skip" IsCancel="True" MinWidth="90" Padding="12,5"/>
+        </StackPanel>
+
+        <StackPanel>
+            <TextBlock TextWrapping="Wrap"
+                       Text="These subnets are configured but this machine has no address on them, so nothing on them can be found:"/>
+
+            <TextBlock x:Name="SubnetsText" Margin="14,8,0,0" FontWeight="SemiBold"/>
+
+            <TextBlock Text="Add a temporary address on:" Margin="0,16,0,6" FontWeight="SemiBold"/>
+
+            <!-- A list rather than a combo: on a laptop the choice between Wi-Fi and
+                 the wired link is the whole point, and it should be visible without
+                 opening anything. -->
+            <ListBox x:Name="AdapterList" Height="150" SelectionChanged="OnAdapterChanged">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="2,4">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Alias}" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding Kind}" Margin="8,0,0,0" Foreground="#1F4E79"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="#666"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <TextBlock x:Name="DhcpWarning" TextWrapping="Wrap" FontSize="11"
+                       Foreground="Chocolate" Visibility="Collapsed" Margin="0,8,0,0"
+                       Text="This adapter is on DHCP. It has to be switched to a fixed address while the app runs - its current address is kept, and it is put back on DHCP when the app closes."/>
+
+            <CheckBox x:Name="RememberCheck" Content="Remember this adapter" Margin="0,12,0,0"/>
+
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#777" Margin="0,10,0,0"
+                       Text="Existing addresses are left alone, and anything added is removed again when this app closes. Windows will ask for administrator permission once."/>
+        </StackPanel>
+    </DockPanel>
+</Window>

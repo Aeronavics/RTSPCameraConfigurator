@@ -34,7 +34,7 @@ public partial class SettingsDialog : Window
         // dropped, so it is offered as-is rather than falling back to automatic.
         if (AdapterBox.SelectedItem is null && !string.IsNullOrWhiteSpace(interfaceAlias))
         {
-            var missing = new NetworkScope.Adapter(interfaceAlias, "", "not present", false);
+            var missing = new NetworkScope.Adapter(interfaceAlias, "", "not present", false, "?");
             AdapterBox.Items.Add(missing);
             AdapterBox.SelectedItem = missing;
         }
