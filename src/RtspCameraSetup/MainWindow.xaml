@@ -55,9 +55,8 @@
                           ToolTip="Re-read cameras.json from disk"/>
             </MenuItem>
 
-            <MenuItem Header="_Help">
-                <MenuItem Header="_About RTSP Camera Setup..." Click="OnAboutClicked"/>
-            </MenuItem>
+            <!-- Top level with no submenu: there is only one thing behind it. -->
+            <MenuItem Header="_About" Click="OnAboutClicked"/>
         </Menu>
 
         <!-- =========================== status bar ========================== -->
