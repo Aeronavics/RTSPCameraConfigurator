@@ -54,6 +54,10 @@
                 <MenuItem Header="_Reload configuration" Click="OnReloadConfigClicked"
                           ToolTip="Re-read cameras.json from disk"/>
             </MenuItem>
+
+            <MenuItem Header="_Help">
+                <MenuItem Header="_About RTSP Camera Setup..." Click="OnAboutClicked"/>
+            </MenuItem>
         </Menu>
 
         <!-- =========================== status bar ========================== -->
@@ -410,67 +414,6 @@
                     <TabItem Header="Device" x:Name="DeviceTab" IsEnabled="False">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel x:Name="DevicePanel" Margin="16"/>
-                        </ScrollViewer>
-                    </TabItem>
-
-                    <!-- ============================ about ====================== -->
-                    <TabItem Header="About" x:Name="AboutTab">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <StackPanel Margin="20" MaxWidth="560" HorizontalAlignment="Left">
-
-                                <!-- The dark logo variant: this pane is light, and the
-                                     supplied asset is white-on-transparent. -->
-                                <Image Source="/assets/sps-logo.png" Height="58"
-                                       HorizontalAlignment="Left" Margin="0,0,0,18"
-                                       RenderOptions.BitmapScalingMode="HighQuality"/>
-
-                                <TextBlock Text="RTSP Camera Setup" FontSize="21" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="AboutVersionText" Foreground="#666" Margin="0,2,0,0"/>
-
-                                <TextBlock TextWrapping="Wrap" Margin="0,14,0,0" Foreground="#333"
-                                           Text="Configures OEM RTSP cameras without going through their web GUI. Finds cameras on the watched subnets, connects on a click, and edits imaging, encoder, detection, OSD, network and service settings from a live preview."/>
-
-                                <TextBlock Text="This camera" Style="{StaticResource GroupHeader}" Margin="0,20,0,8"/>
-                                <Grid x:Name="AboutCameraGrid">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                </Grid>
-                                <TextBlock x:Name="AboutNoCameraText" Foreground="#888" FontSize="11"
-                                           Text="Not connected. Select a camera in the list to see what it reports."/>
-
-                                <TextBlock Text="Where things are kept" Style="{StaticResource GroupHeader}" Margin="0,20,0,8"/>
-                                <Grid x:Name="AboutPathsGrid">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                </Grid>
-
-                                <TextBlock Text="Open source components" Style="{StaticResource GroupHeader}" Margin="0,20,0,8"/>
-                                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#555">
-                                    <Run Text="This app bundles two third-party components, each launched or loaded as a separate library and covered by its own licence:"/>
-                                    <LineBreak/><LineBreak/>
-                                    <Run Text="ffmpeg" FontWeight="SemiBold"/>
-                                    <Run Text=" — the preview decoder, run as a separate process. GPL v3; see ffmpeg-LICENSE.txt beside the executable."/>
-                                    <LineBreak/>
-                                    <Run Text="LibVLC / LibVLCSharp" FontWeight="SemiBold"/>
-                                    <Run Text=" — the fallback preview engine. LGPL v2.1."/>
-                                </TextBlock>
-
-                                <TextBlock Text="Source" Style="{StaticResource GroupHeader}" Margin="0,20,0,8"/>
-                                <TextBlock>
-                                    <Hyperlink x:Name="AboutRepoLink" NavigateUri="https://github.com/Aeronavics/RTSPCameraConfigurator"
-                                               RequestNavigate="OnAboutLinkClicked">
-                                        github.com/Aeronavics/RTSPCameraConfigurator
-                                    </Hyperlink>
-                                </TextBlock>
-
-                                <TextBlock Margin="0,20,0,0" FontSize="11" Foreground="#888"
-                                           Text="SPS Automation"/>
-
-                            </StackPanel>
                         </ScrollViewer>
                     </TabItem>
 
