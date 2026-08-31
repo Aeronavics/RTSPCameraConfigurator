@@ -105,6 +105,75 @@ no rebuild needed.
 
 ---
 
+---
+
+## Building the installer
+
+```bash
+installer\build-installer.cmd
+```
+
+Publishes, then compiles `build\CameraSetup-Setup-<version>.exe`. Pass `/nopublish`
+to compile from whatever is already in `dist\`.
+
+**Requires Inno Setup 6** on the build machine:
+
+```bash
+winget install JRSoftware.InnoSetup
+```
+
+The script looks for `ISCC.exe` on `PATH`, in both Program Files locations, and in
+`%LOCALAPPDATA%\Programs\Inno Setup 6` — winget installs it there when it is not run
+elevated.
+
+### ffmpeg is located at build time, not committed
+
+The installer bundles ffmpeg so the preferred preview engine is the default with
+nothing for the user to do. The binary is ~97 MB, so it is **not** in the repo: the
+build script finds one on the machine instead, searching WinGet's package folder
+first and then `PATH`.
+
+It prefers an **essentials** build. That carries the H.264 and H.265 decoders and the
+rawvideo muxer — the whole of what this app uses — at ~97 MB against ~212 MB for
+`full_build`. A machine with both installed therefore gets the smaller one
+deterministically, rather than whichever the directory walk happened to return first.
+
+```bash
+winget install Gyan.FFmpeg.Essentials
+```
+
+Note that WinGet's `Links\ffmpeg.exe` entry is a zero-byte shim, so the script
+resolves the real binary rather than trusting the first match.
+
+**If no ffmpeg is found the installer still builds.** It simply ships without it, and
+a post-install dialog tells the user how to add it. That dialog is compiled in only
+when ffmpeg was not bundled, and is suppressed during a silent install — `MsgBox`
+ignores `/SUPPRESSMSGBOXES`, so an unattended deployment would otherwise sit waiting
+for someone to click OK.
+
+The bundled build is GPL v3, so its `LICENSE` and `README` install alongside it.
+ffmpeg is launched as a separate process and never linked, so bundling it does not
+affect this application's own licensing.
+
+### Why it installs per-user
+
+Into `%LOCALAPPDATA%\Programs\CameraSetup`, not Program Files, and with no UAC
+prompt. This is forced by where the app keeps its data: `cameras.json` and the
+`presets\` folder both resolve to `AppContext.BaseDirectory`, and **Settings → Subnets
+rewrites `cameras.json` in place**. Under Program Files a standard user could neither
+save watched subnets nor export a preset.
+
+Change `PrivilegesRequired` in `installer\CameraSetup.iss` only if the app is changed
+to keep its data somewhere else.
+
+### What an upgrade keeps
+
+`cameras.json` and `presets\Generic.json` are installed `onlyifdoesntexist` and marked
+`uninsneveruninstall`: an upgrade cannot overwrite your watched subnets or captured
+cameras, and an uninstall leaves both behind. The current config also ships every time
+as `cameras.reference.json`, refreshed on each upgrade, so there is something to diff
+against when new settings appear.
+
 ## How the camera was opened up
 
 The stock firmware only documents its web GUI, so the control path was recovered by
