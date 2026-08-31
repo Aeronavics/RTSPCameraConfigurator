@@ -18,3 +18,10 @@ credentials.dat
 *.suo
 Thumbs.db
 desktop.ini
+
+# Preset / parameter files. These are captured camera configurations rather than
+# source: they hold site-specific settings, and a full capture carries credential
+# fields (gb28181.sip_passwd, email and FTP passwords). They stay on disk so the
+# build still ships them - the csproj copies presets\*.json to the output - but they
+# are deliberately not versioned.
+**/presets/
