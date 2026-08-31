@@ -21,7 +21,7 @@
   #define Payload "..\dist"
 #endif
 
-#define AppName        "Camera Setup"
+#define AppName        "RTSP Camera Setup"
 #define AppExe         "CameraSetup.exe"
 #define AppPublisher   "Aeronavics"
 #define AppUrl         "https://github.com/Aeronavics/RTSPCameraConfigurator"
@@ -61,7 +61,7 @@ LZMANumBlockThreads=4
 
 OutputDir=..\build
 OutputBaseFilename=CameraSetup-Setup-{#AppVersion}
-SetupIconFile=
+SetupIconFile=..\src\RtspCameraSetup\assets\app.ico
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 WizardStyle=modern

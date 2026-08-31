@@ -37,6 +37,9 @@ public sealed class CredentialStore
         Load();
     }
 
+    /// <summary>Where the encrypted store lives. Shown on the About tab.</summary>
+    public string StorePath => _path;
+
     public (string User, string Password)? TryGet(string address)
     {
         if (!_entries.TryGetValue(address, out var entry)) return null;

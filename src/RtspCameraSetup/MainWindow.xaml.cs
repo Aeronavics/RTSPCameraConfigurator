@@ -135,6 +135,9 @@ public partial class MainWindow : Window
         _discovery = new DiscoveryService(
             _config, Dispatcher, _credentials, () => DefaultCredentials);
 
+        // After _credentials: the About tab reports where the store lives.
+        BuildAboutTab();
+
         CameraList.ItemsSource = _discovery.Cameras;
         _discovery.StatusChanged += _ => { };
         _discovery.Start();
@@ -219,6 +222,7 @@ public partial class MainWindow : Window
         ExportButton.IsEnabled = connected;
         ImportButton.IsEnabled = connected;
 
+        UpdateAboutCamera();
         UpdateProvisionTarget();
     }
 
@@ -1041,6 +1045,126 @@ public partial class MainWindow : Window
         finally
         {
         }
+    }
+
+    // ================================================================ about
+
+    /// <summary>
+    /// Fills the About tab. The version comes from the assembly rather than a
+    /// literal, so bumping it in the csproj is enough - there is nothing here to
+    /// forget to update.
+    /// </summary>
+    private void BuildAboutTab()
+    {
+        var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+        var version = System.Reflection.CustomAttributeExtensions
+                          .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(assembly)?.InformationalVersion
+                      ?? assembly.GetName().Version?.ToString()
+                      ?? "unknown";
+
+        // Strip the source-revision suffix the SDK appends to InformationalVersion.
+        var plus = version.IndexOf('+');
+        if (plus > 0) version = version[..plus];
+
+        var built = File.Exists(assembly.Location)
+            ? File.GetLastWriteTime(assembly.Location).ToString("d MMM yyyy")
+            : "";
+
+        AboutVersionText.Text = string.IsNullOrEmpty(built)
+            ? $"Version {version}"
+            : $"Version {version}  ·  built {built}";
+
+        AboutPathsGrid.Children.Clear();
+        AboutPathsGrid.RowDefinitions.Clear();
+
+        var row = 0;
+        AddAboutRow(AboutPathsGrid, ref row, "Configuration", ConfigPath());
+        AddAboutRow(AboutPathsGrid, ref row, "Presets", PresetDirectory());
+        AddAboutRow(AboutPathsGrid, ref row, "Saved credentials", _credentials.StorePath);
+        AddAboutRow(AboutPathsGrid, ref row, "Crash log",
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                         "CameraSetup", "crash.log"));
+    }
+
+    /// <summary>Shows what the connected camera reports, or nothing when offline.</summary>
+    private void UpdateAboutCamera()
+    {
+        AboutCameraGrid.Children.Clear();
+        AboutCameraGrid.RowDefinitions.Clear();
+
+        if (_client is null || _deviceInfo.Count == 0)
+        {
+            AboutNoCameraText.Visibility = Visibility.Visible;
+            return;
+        }
+
+        AboutNoCameraText.Visibility = Visibility.Collapsed;
+
+        var row = 0;
+        AddAboutRow(AboutCameraGrid, ref row, "Address", _client.Host);
+        AddAboutRow(AboutCameraGrid, ref row, "Profile", _profile?.Name ?? "");
+
+        foreach (var (label, key) in new[]
+                 {
+                     ("Model", "devtype"), ("Firmware", "version"),
+                     ("SoC", "cpu_type"), ("Serial", "serial_num")
+                 })
+        {
+            if (_deviceInfo.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+                AddAboutRow(AboutCameraGrid, ref row, label, value);
+        }
+
+        // The capability word is what decides which tabs exist, so it is worth
+        // surfacing when a feature is unexpectedly missing.
+        if (DeviceCapabilities != 0)
+            AddAboutRow(AboutCameraGrid, ref row, "Capabilities",
+                $"0x{DeviceCapabilities:X} - {_detectors.Count} detector(s), {_modules.Count} service module(s)");
+    }
+
+    private static void AddAboutRow(Grid grid, ref int row, string label, string value)
+    {
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var name = new TextBlock
+        {
+            Text = label,
+            Foreground = System.Windows.Media.Brushes.Gray,
+            Margin = new Thickness(0, 0, 8, 4)
+        };
+        Grid.SetRow(name, row);
+        Grid.SetColumn(name, 0);
+        grid.Children.Add(name);
+
+        var text = new TextBox
+        {
+            Text = value,
+            IsReadOnly = true,
+            BorderThickness = new Thickness(0),
+            Background = System.Windows.Media.Brushes.Transparent,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0, 0, 0, 4),
+            TextWrapping = TextWrapping.Wrap
+        };
+        Grid.SetRow(text, row);
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(text);
+
+        row++;
+    }
+
+    private void OnAboutLinkClicked(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not open the link: {ex.Message}");
+        }
+
+        e.Handled = true;
     }
 
     // =============================================================== users

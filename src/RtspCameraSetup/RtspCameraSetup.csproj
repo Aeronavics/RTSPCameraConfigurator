@@ -14,8 +14,15 @@
     <AssemblyName>CameraSetup</AssemblyName>
     <RootNamespace>RtspCameraSetup</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Product>Camera Setup</Product>
-    <AssemblyTitle>Camera Setup</AssemblyTitle>
+    <Product>RTSP Camera Setup</Product>
+    <AssemblyTitle>RTSP Camera Setup</AssemblyTitle>
+    <ApplicationIcon>assets/app.ico</ApplicationIcon>
+    <Company>SPS Automation</Company>
+    <Description>Configures OEM RTSP cameras without their web GUI.</Description>
+    <Copyright>SPS Automation</Copyright>
+    <!-- Shown on the About tab and used to name the installer, so bump it here
+         and both follow. -->
+    <Version>1.1.0</Version>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
@@ -56,6 +63,10 @@
     <None Update="presets\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="assets\sps-logo.png" />
   </ItemGroup>
 
 </Project>
