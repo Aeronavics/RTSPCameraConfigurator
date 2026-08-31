@@ -69,7 +69,12 @@ set "FFMPEG="
 set "FFDEFS="
 set "FFLIC="
 
+rem Prefer the essentials build. It carries the same H.264/H.265 decoders and the
+rem rawvideo muxer this app actually uses, at ~97 MB against ~212 MB for full_build.
 if exist "%LOCALAPPDATA%\Microsoft\WinGet\Packages" (
+    for /f "delims=" %%F in ('dir /b /s "%LOCALAPPDATA%\Microsoft\WinGet\Packages\ffmpeg.exe" 2^>nul ^| findstr /i essentials') do (
+        if not defined FFMPEG call :usereal "%%F"
+    )
     for /f "delims=" %%F in ('dir /b /s "%LOCALAPPDATA%\Microsoft\WinGet\Packages\ffmpeg.exe" 2^>nul') do (
         if not defined FFMPEG call :usereal "%%F"
     )
