@@ -25,3 +25,6 @@ desktop.ini
 # build still ships them - the csproj copies presets\*.json to the output - but they
 # are deliberately not versioned.
 **/presets/
+
+# Installer output. Rebuild it with installeruild-installer.cmd.
+/build/
