@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 public sealed class CameraException : Exception
 {

@@ -22,7 +22,7 @@
 #endif
 
 #define AppName        "RTSP Camera Setup"
-#define AppExe         "CameraSetup.exe"
+#define AppExe         "RTSPCameraConfigurator.exe"
 #define AppPublisher   "Aeronavics"
 #define AppUrl         "https://github.com/Aeronavics/RTSPCameraConfigurator"
 
@@ -41,7 +41,7 @@ AppPublisher={#AppPublisher}
 AppSupportURL={#AppUrl}
 AppUpdatesURL={#AppUrl}
 
-DefaultDirName={localappdata}\Programs\CameraSetup
+DefaultDirName={localappdata}\Programs\RTSPCameraConfigurator
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 DisableDirPage=no
@@ -60,8 +60,8 @@ SolidCompression=yes
 LZMANumBlockThreads=4
 
 OutputDir=..\build
-OutputBaseFilename=CameraSetup-Setup-{#AppVersion}
-SetupIconFile=..\src\RtspCameraSetup\assets\app.ico
+OutputBaseFilename=RTSPCameraConfigurator-Setup-{#AppVersion}
+SetupIconFile=..\src\RTSPCameraConfigurator\assets\app.ico
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 WizardStyle=modern

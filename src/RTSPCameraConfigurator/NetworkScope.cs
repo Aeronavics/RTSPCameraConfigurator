@@ -7,7 +7,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 /// <summary>
 /// Works out whether the configured subnets are reachable from this machine, and if
@@ -30,9 +30,7 @@ public sealed class NetworkScope
 
     public NetworkScope()
     {
-        _journalPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CameraSetup", "temporary-addresses.json");
+        _journalPath = AppData.File("temporary-addresses.json");
     }
 
     public static bool IsElevated

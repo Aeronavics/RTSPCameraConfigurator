@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 public enum CameraState
 {

@@ -1,7 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Windows.Threading;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 /// <summary>
 /// Keeps <see cref="Cameras"/> continuously in step with what is actually on the

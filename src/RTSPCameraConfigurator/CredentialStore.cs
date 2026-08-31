@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 /// <summary>
 /// Remembers per-camera logins so a known camera connects on one click.
@@ -30,9 +30,7 @@ public sealed class CredentialStore
 
     public CredentialStore()
     {
-        _path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CameraSetup", "credentials.json");
+        _path = AppData.File("credentials.json");
 
         Load();
     }

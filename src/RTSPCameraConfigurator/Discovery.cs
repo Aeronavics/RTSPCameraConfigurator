@@ -3,7 +3,7 @@ using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 public sealed record DiscoveredCamera(string Address, string Description)
 {

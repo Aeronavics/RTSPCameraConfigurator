@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 /// <summary>
 /// A portable capture of one camera's settings - the "param file".

@@ -10,7 +10,7 @@ using Point = System.Windows.Point;
 using Brushes = System.Windows.Media.Brushes;
 using Color = System.Windows.Media.Color;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 /// <summary>
 /// Draws the detection / privacy rectangles over a still from the camera.

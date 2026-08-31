@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using LibVLCSharp.Shared;
 
-namespace RtspCameraSetup.Tools;
+namespace RTSPCameraConfigurator.Tools;
 
 /// <summary>
 /// Reports what an RTSP path ACTUALLY delivers, by decoding it.

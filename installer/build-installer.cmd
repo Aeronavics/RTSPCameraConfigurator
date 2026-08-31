@@ -10,7 +10,7 @@ rem ---------------------------------------------------------------------------
 setlocal
 
 set "ROOT=%~dp0.."
-set "PROJECT=%ROOT%\src\RtspCameraSetup\RtspCameraSetup.csproj"
+set "PROJECT=%ROOT%\src\RTSPCameraConfigurator\RTSPCameraConfigurator.csproj"
 set "PAYLOAD=%ROOT%\dist"
 
 if /i "%~1"=="/nopublish" goto :compile
@@ -32,7 +32,7 @@ if errorlevel 1 (
 echo.
 
 :compile
-if not exist "%PAYLOAD%\CameraSetup.exe" (
+if not exist "%PAYLOAD%\RTSPCameraConfigurator.exe" (
     echo ERROR: no payload at "%PAYLOAD%".
     echo Run this without /nopublish, or publish first.
     exit /b 1
@@ -60,7 +60,7 @@ if not defined ISCC (
 if not exist "%ROOT%\build" mkdir "%ROOT%\build"
 
 echo Compiling installer with "%ISCC%"...
-"%ISCC%" /DPayload="%PAYLOAD%" "%~dp0CameraSetup.iss"
+"%ISCC%" /DPayload="%PAYLOAD%" "%~dp0RTSPCameraConfigurator.iss"
 if errorlevel 1 (
     echo.
     echo ERROR: the installer failed to compile.

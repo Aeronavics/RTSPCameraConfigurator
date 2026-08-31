@@ -4,7 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 public partial class MainWindow : Window
 {

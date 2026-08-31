@@ -10,9 +10,9 @@ rem ---------------------------------------------------------------------------
 setlocal
 
 set "ROOT=%~dp0"
-set "PROJECT=%ROOT%src\RtspCameraSetup\RtspCameraSetup.csproj"
-set "PUBLISH=%ROOT%src\RtspCameraSetup\bin\Release\net9.0-windows\win-x64\publish"
-set "APP=%PUBLISH%\CameraSetup.exe"
+set "PROJECT=%ROOT%src\RTSPCameraConfigurator\RTSPCameraConfigurator.csproj"
+set "PUBLISH=%ROOT%src\RTSPCameraConfigurator\bin\Release\net9.0-windows\win-x64\publish"
+set "APP=%PUBLISH%\RTSPCameraConfigurator.exe"
 
 set "FORCE="
 if /i "%~1"=="/rebuild" set "FORCE=1"

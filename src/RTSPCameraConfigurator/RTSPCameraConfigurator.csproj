@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>CameraSetup</AssemblyName>
-    <RootNamespace>RtspCameraSetup</RootNamespace>
+    <AssemblyName>RTSPCameraConfigurator</AssemblyName>
+    <RootNamespace>RTSPCameraConfigurator</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Product>RTSP Camera Setup</Product>
     <AssemblyTitle>RTSP Camera Setup</AssemblyTitle>

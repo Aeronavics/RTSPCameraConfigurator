@@ -70,18 +70,18 @@ Requires the .NET 9 SDK. `run.cmd` does this for you; the steps below are for wh
 want to drive it directly.
 
 ```bash
-dotnet build "src/RtspCameraSetup/RtspCameraSetup.csproj" -c Release
+dotnet build "src/RTSPCameraConfigurator/RTSPCameraConfigurator.csproj" -c Release
 ```
 
 To produce a self-contained build that needs nothing installed on the target
 target machine:
 
 ```bash
-dotnet publish "src/RtspCameraSetup/RtspCameraSetup.csproj" -c Release
+dotnet publish "src/RTSPCameraConfigurator/RTSPCameraConfigurator.csproj" -c Release
 ```
 
 Copy the whole `bin/Release/net9.0-windows/win-x64/publish/` folder to the target
-machine and run `CameraSetup.exe`.
+machine and run `RTSPCameraConfigurator.exe`.
 
 **Deploy the folder, not just the exe.** `PublishSingleFile` is deliberately off: the
 app looks for `ffmpeg.exe` beside itself, and the single-file bundler extracts to a

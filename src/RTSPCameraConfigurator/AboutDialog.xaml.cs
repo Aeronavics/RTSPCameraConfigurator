@@ -2,7 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 /// <summary>
 /// Reference information about the app. Reached from the menu bar rather than the
@@ -20,9 +20,7 @@ public partial class AboutDialog : Window
         AddRow(ref row, "Configuration", configPath);
         AddRow(ref row, "Presets", presetDirectory);
         AddRow(ref row, "Saved credentials", credentialPath);
-        AddRow(ref row, "Crash log", Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "CameraSetup", "crash.log"));
+        AddRow(ref row, "Crash log", AppData.File("crash.log"));
     }
 
     /// <summary>

@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 public partial class CredentialDialog : Window
 {

@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 /// <summary>
 /// Edits cameras.json in place from the Settings dialog.

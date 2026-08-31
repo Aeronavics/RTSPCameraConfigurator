@@ -8,7 +8,7 @@ using System.Windows.Threading;
 
 using Image = System.Windows.Controls.Image;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 /// <summary>
 /// Plays an RTSP stream by piping raw frames out of an ffmpeg subprocess and drawing

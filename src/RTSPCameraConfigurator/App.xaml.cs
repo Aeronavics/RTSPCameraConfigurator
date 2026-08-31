@@ -2,7 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 
-namespace RtspCameraSetup;
+namespace RTSPCameraConfigurator;
 
 public partial class App : Application
 {
@@ -29,12 +29,7 @@ public partial class App : Application
     {
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CameraSetup");
-            Directory.CreateDirectory(dir);
-
-            var path = Path.Combine(dir, "crash.log");
+            var path = AppData.File("crash.log");
             File.WriteAllText(path, $"{DateTime.Now:u}{Environment.NewLine}{exception}");
             return path;
         }
