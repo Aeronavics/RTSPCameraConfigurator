@@ -3583,6 +3583,52 @@ public partial class MainWindow : Window
         return (Math.Max(2, width - (width % 2)), Math.Max(2, maxHeight - (maxHeight % 2)));
     }
 
+    /// <summary>
+    /// Shows the preview full screen, decoded at what the display can actually show
+    /// rather than the small pane's cap - but never above the camera's own
+    /// resolution, since upscaling past that only costs bandwidth for no detail.
+    /// </summary>
+    private void OnPreviewClicked(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        // Image is not a Control, so there is no MouseDoubleClick to hook.
+        if (e.ClickCount != 2) return;
+        if (_ffmpeg is null || _previewDisabled || _client is null || _profile is null) return;
+
+        var wasPlaying = _ffmpeg.IsRunning;
+        var window = new FullscreenPreview { Owner = this };
+
+        window.Closed += (_, _) =>
+        {
+            // Hand the stream back to the pane, at the pane's cap again.
+            _ffmpeg.Stop();
+            _ffmpeg.Retarget(VideoImage);
+            if (wasPlaying) StartPreview();
+        };
+
+        window.Show();
+
+        var source = UseSubStream ? _subSize : _mainSize;
+        var (screenWidth, screenHeight) = window.ScreenPixels();
+
+        // Fit the screen, capped at the camera. Height drives it because the frame is
+        // letterboxed into the display's aspect ratio.
+        var target = PreviewSize(source, Math.Min(screenHeight, source.Height));
+        if (screenWidth > 0 && target.Width > screenWidth)
+            target = PreviewSize(source, Math.Max(2, (int)Math.Round(source.Height * (double)screenWidth / source.Width)));
+
+        _ffmpeg.Stop();
+        _ffmpeg.Retarget(window.Surface);
+
+        var url = CurrentStreamUrl();
+        if (url is null) return;
+
+        var tcp = string.Equals(_profile.Rtsp.Transport, "tcp", StringComparison.OrdinalIgnoreCase);
+        _ffmpeg.Start(url, target.Width, target.Height, tcp);
+
+        SetStatus($"Fullscreen: {source.Width}x{source.Height} shown at {target.Width}x{target.Height} " +
+                  $"(display {screenWidth}x{screenHeight})");
+    }
+
     private void StartPreview()
     {
         if (_previewDisabled || _ffmpeg is null || _profile is null) return;

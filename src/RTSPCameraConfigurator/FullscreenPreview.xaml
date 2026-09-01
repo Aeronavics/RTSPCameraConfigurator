@@ -1,0 +1,20 @@
+<Window x:Class="RTSPCameraConfigurator.FullscreenPreview"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Preview"
+        WindowStyle="None" WindowState="Maximized" ResizeMode="NoResize"
+        Background="Black" ShowInTaskbar="False"
+        FontFamily="Segoe UI" FontSize="13"
+        KeyDown="OnKeyDown" MouseDoubleClick="OnDoubleClick">
+
+    <Grid>
+        <!-- HighQuality here, unlike the small pane: at this size the difference in
+             scaling is visible and there is headroom to pay for it. -->
+        <Image x:Name="VideoImage" Stretch="Uniform"
+               RenderOptions.BitmapScalingMode="HighQuality"/>
+
+        <TextBlock x:Name="HintText" Foreground="#AAA" FontSize="12"
+                   HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,24"
+                   Text="Esc or double-click to close"/>
+    </Grid>
+</Window>

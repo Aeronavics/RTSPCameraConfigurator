@@ -24,7 +24,7 @@ namespace RTSPCameraConfigurator;
 /// </summary>
 public sealed class FfmpegVideoSource : IDisposable
 {
-    private readonly Image _target;
+    private Image _target;
     private readonly PreviewSpec _spec;
     private readonly Dispatcher _dispatcher;
 
@@ -54,6 +54,16 @@ public sealed class FfmpegVideoSource : IDisposable
         _target = target;
         _spec = spec;
         _dispatcher = target.Dispatcher;
+    }
+
+    /// <summary>
+    /// Draws into a different Image from now on. Used by the fullscreen view, which
+    /// wants the same decoder pointed somewhere else rather than a second one.
+    /// </summary>
+    public void Retarget(Image target)
+    {
+        _dispatcher.Invoke(() => _target.Source = null);
+        _target = target;
     }
 
     /// <summary>Resolves the executable, so a missing ffmpeg is reported rather than thrown at play time.</summary>

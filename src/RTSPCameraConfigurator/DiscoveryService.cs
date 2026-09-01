@@ -199,7 +199,12 @@ public sealed class DiscoveryService : IDisposable
                 return true;
             });
         }
-        catch (OperationCanceledException) { throw; }
+        // Only a real cancellation unwinds. CameraClient has its own 10 s HTTP
+        // timeout, which surfaces as TaskCanceledException - an OperationCanceledException
+        // - and rethrowing that killed the whole discovery loop for good: the sweep
+        // faulted, RunAsync took it for a cancellation and returned. One slow camera
+        // stopped every later sweep, so nothing after it was ever listed.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception)
         {
             // Wrong or unknown credentials: keep the row, flag it, let the user in.

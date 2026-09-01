@@ -95,7 +95,7 @@ public static class Discovery
                     if (onFound is not null) await onFound(camera);
                 }
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch { /* an unreachable host is the normal case, not an error */ }
             finally
             {

@@ -472,7 +472,9 @@
                      Stream row stays level with the tab strip beside it. -->
                 <Border Background="Black" Margin="0,6,0,0">
                     <Image x:Name="VideoImage" Stretch="Uniform"
-                           RenderOptions.BitmapScalingMode="LowQuality"/>
+                           RenderOptions.BitmapScalingMode="LowQuality"
+                           MouseLeftButtonDown="OnPreviewClicked"
+                           ToolTip="Double-click for fullscreen"/>
                 </Border>
             </DockPanel>
         </Grid>
