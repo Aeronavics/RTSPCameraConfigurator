@@ -270,8 +270,32 @@ public partial class MainWindow : Window
         UpdateWatchScope();
     }
 
+    /// <summary>
+    /// Keeps the empty-list message honest: which subnets are being swept, or why
+    /// nothing is happening. Shown only while the list is empty.
+    /// </summary>
+    private void UpdateSearchingText()
+    {
+        var subnets = _config.Discovery.Subnets;
+        var gap = Environment.NewLine + Environment.NewLine;
+
+        if (subnets.Count == 0)
+        {
+            SearchingText.Text = "No subnets configured." + gap + "Settings > Subnets to search";
+            return;
+        }
+
+        var where = string.Join(Environment.NewLine, subnets.Select(s => s + ".0/24"));
+
+        SearchingText.Text = _config.Discovery.Continuous
+            ? "Searching ..." + gap + where
+            : "Searched once." + gap + where;
+    }
+
     private void UpdateWatchScope()
     {
+        UpdateSearchingText();
+
         // The watched subnets live in Settings; they are not echoed onto the window.
     }
 

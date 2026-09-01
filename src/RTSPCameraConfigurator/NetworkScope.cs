@@ -220,7 +220,11 @@ public sealed class NetworkScope
         _added.AddRange(planned);
         WriteJournal();
 
-        if (!RunElevated(commands, out error))
+        // One elevation for the whole session. The helper applies the addresses,
+        // reports back, then waits for this process to exit and reverts on its own -
+        // so closing the app needs no second UAC prompt. It also means a crash still
+        // gets the adapter back, which asking again on exit never could.
+        if (!StartSessionHelper(commands, RestoreCommands(planned).ToList(), out error))
         {
             _added.RemoveAll(planned.Contains);
             WriteJournal();
@@ -259,9 +263,24 @@ public sealed class NetworkScope
     /// address on the adapter with no record of it whenever the delete fails or
     /// elevation is declined, so the next run has nothing to clean up.
     /// </summary>
+    /// <summary>
+    /// Hands the borrowed addresses back.
+    ///
+    /// When the session helper is still alive it already holds the revert commands and
+    /// runs them as soon as this process exits, so there is nothing to do here and no
+    /// second UAC prompt. Only when there is no helper - a journal left by an earlier
+    /// run, or a helper that died - does this elevate to clean up itself.
+    /// </summary>
     public void RemoveTemporaryAddresses()
     {
         if (_added.Count == 0) return;
+
+        if (HelperIsRunning)
+        {
+            // Nothing to elevate for. The addresses are still on the adapter at this
+            // moment by design; the helper removes them a second from now.
+            return;
+        }
 
         var commands = _added
             .Select(a => $"netsh interface ipv4 delete address name=\"{a.InterfaceAlias}\" address={a.Address}")
@@ -275,6 +294,122 @@ public sealed class NetworkScope
         _added.RemoveAll(a => !present.Contains(a.Address));
 
         WriteJournal();
+    }
+
+    private Process? _helper;
+
+    private bool HelperIsRunning
+    {
+        get
+        {
+            try { return _helper is { HasExited: false }; }
+            catch { return false; }
+        }
+    }
+
+    /// <summary>
+    /// Runs one elevated helper for the life of the app: apply, report, wait for this
+    /// process to end, revert.
+    ///
+    /// The wait is on this process's id, so the revert happens however the app ends -
+    /// including a crash, where prompting for elevation would not have been possible
+    /// at all. The helper cleans up its own temporary files afterwards.
+    /// </summary>
+    private bool StartSessionHelper(IReadOnlyList<string> apply, IReadOnlyList<string> revert, out string? error)
+    {
+        error = null;
+
+        var stamp = Guid.NewGuid().ToString("N");
+        var script = Path.Combine(Path.GetTempPath(), $"rtspcam-session-{stamp}.cmd");
+        var status = Path.Combine(Path.GetTempPath(), $"rtspcam-session-{stamp}.status");
+        var log = Path.Combine(Path.GetTempPath(), $"rtspcam-session-{stamp}.log");
+
+        try
+        {
+            var text = new StringBuilder();
+            text.AppendLine("@echo off");
+            text.AppendLine("set RC=0");
+
+            foreach (var command in apply)
+            {
+                text.AppendLine($"if \"%RC%\"==\"0\" ({command} >> \"{log}\" 2>&1) else rem");
+                text.AppendLine("if errorlevel 1 set RC=1");
+            }
+
+            // Tell the app how the apply went, before settling in to wait.
+            text.AppendLine($"echo %RC%> \"{status}\"");
+            text.AppendLine("if not \"%RC%\"==\"0\" goto cleanup");
+
+            // Block on the process handle rather than polling. A tasklist/find loop
+            // was tried first and reverted immediately: errorlevel through a pipe is
+            // not reliable here, and "timeout" fails outright when stdin is
+            // redirected, which it is for a hidden helper.
+            text.AppendLine($"powershell -NoProfile -NonInteractive -Command \"Wait-Process -Id {Environment.ProcessId} -ErrorAction SilentlyContinue\"");
+
+            foreach (var command in revert)
+                text.AppendLine($"{command} >> \"{log}\" 2>&1");
+
+            text.AppendLine(":cleanup");
+            text.AppendLine($"del /q \"{status}\" >nul 2>&1");
+            text.AppendLine($"del /q \"{log}\" >nul 2>&1");
+            // Delete the script last, and detached, since it is still executing.
+            text.AppendLine($"start \"\" /b cmd /c \"timeout /t 2 /nobreak >nul & del /q \"\"{script}\"\"\"");
+            text.AppendLine("exit /b %RC%");
+
+            File.WriteAllText(script, text.ToString());
+
+            var psi = new ProcessStartInfo("cmd.exe", $"/c \"{script}\"")
+            {
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            if (!IsElevated) psi.Verb = "runas";
+
+            _helper = Process.Start(psi);
+            if (_helper is null)
+            {
+                error = "could not start the elevated helper";
+                return false;
+            }
+
+            // Wait for the apply phase only - the helper stays alive after it.
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (File.Exists(status))
+                {
+                    var code = File.ReadAllText(status).Trim();
+                    if (code.StartsWith("0", StringComparison.Ordinal)) return true;
+
+                    error = ReadLog(log) ?? "the elevated helper could not add the address";
+                    return false;
+                }
+
+                if (HelperIsRunning is false)
+                {
+                    error = ReadLog(log) ?? "the elevated helper stopped before it applied anything";
+                    return false;
+                }
+
+                Thread.Sleep(150);
+            }
+
+            error = "the elevated helper did not finish in time";
+            return false;
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            error = "elevation was declined";
+            TryDelete(script);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            TryDelete(script);
+            return false;
+        }
     }
 
     /// <summary>
@@ -412,9 +547,19 @@ public sealed class NetworkScope
         }
     }
 
-    /// <summary>Addresses this run borrowed that are still on the adapter.</summary>
+    /// <summary>
+    /// Addresses this run borrowed that are still on the adapter and have nothing
+    /// left to remove them.
+    ///
+    /// While the session helper is alive this is always empty: the addresses are
+    /// still there at the moment the app closes, by design, and the helper takes
+    /// them away a second later. Reporting them would be a warning about the normal
+    /// case.
+    /// </summary>
     public IReadOnlyList<string> Stranded()
     {
+        if (HelperIsRunning) return Array.Empty<string>();
+
         var present = LocalAddresses().ToHashSet(StringComparer.OrdinalIgnoreCase);
         return _added.Where(a => present.Contains(a.Address)).Select(a => a.Address).ToList();
     }

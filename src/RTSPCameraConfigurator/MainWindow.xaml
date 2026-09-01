@@ -91,6 +91,7 @@
             <!-- ========================== camera list ======================= -->
             <DockPanel Grid.Column="0" Margin="10">
                 <TextBlock DockPanel.Dock="Top" Text="Cameras" Style="{StaticResource GroupHeader}" Margin="0,0,0,2"/>
+                <Grid>
                 <ListBox x:Name="CameraList" SelectionChanged="OnCameraSelected"
                          HorizontalContentAlignment="Stretch">
                     <ListBox.ContextMenu>
@@ -115,6 +116,25 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+
+                    <!-- Sits over the empty list. An empty box gives no clue whether
+                         the app is working; this says which subnets are being swept. -->
+                    <TextBlock x:Name="SearchingText" IsHitTestVisible="False"
+                               HorizontalAlignment="Center" VerticalAlignment="Top"
+                               Margin="12,24,12,0" TextAlignment="Center"
+                               TextWrapping="Wrap" Foreground="#888">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasItems, ElementName=CameraList}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
             </DockPanel>
 
             <!-- ========================= settings tabs ====================== -->
