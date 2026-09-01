@@ -1,8 +1,11 @@
-﻿<Window x:Class="RTSPCameraConfigurator.MainWindow"
+﻿<!-- Height/Width are the restored-down size: the window opens maximised, but is
+     sensible if it is un-maximised. -->
+<Window x:Class="RTSPCameraConfigurator.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="RTSP Camera Setup" Height="860" Width="1300"
         WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
         FontFamily="Segoe UI" FontSize="13">
 
     <Window.Resources>
