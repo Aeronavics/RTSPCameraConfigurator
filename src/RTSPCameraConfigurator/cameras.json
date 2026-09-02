@@ -1020,6 +1020,8 @@
         "writes": "get-query",
         "checkModule": "account",
         "checkCommand": "check",
+        "channelParam": "param2",
+        "payloadParam": "param",
         "defaultUsername": "admin",
         "defaultPassword": "123456"
       }

@@ -309,6 +309,19 @@ public sealed class AuthSpec
     /// <summary>Read back to confirm a password: module and verb, for the "query" scheme.</summary>
     [JsonPropertyName("checkModule")] public string CheckModule { get; set; } = "account";
     [JsonPropertyName("checkCommand")] public string CheckCommand { get; set; } = "check";
+
+    /// <summary>
+    /// Which slot carries the channel and which the values, on a write that names a
+    /// channel. The two firmware families disagree: the H82 puts the channel in "param"
+    /// and the body in "param2", the H8D the other way round.
+    ///
+    /// Getting this wrong is not a visible failure. The H8D answers {"status":"ok"} to the
+    /// swapped form and then writes a zeroed record - a measured image write came back
+    /// with brightness 0 - so a save would appear to succeed while quietly destroying the
+    /// settings it was meant to store.
+    /// </summary>
+    [JsonPropertyName("channelParam")] public string ChannelParam { get; set; } = "param";
+    [JsonPropertyName("payloadParam")] public string PayloadParam { get; set; } = "param2";
 }
 
 public sealed class RtspSpec

@@ -274,25 +274,35 @@ public sealed class CameraClient : IDisposable
 
     /// <summary>
     /// Turns a write payload - the {mod, cmd, param, param2} shape every caller builds -
-    /// into the query form. Which slot carries the channel and which the values is a
-    /// per-module detail that differs between firmware families, so this preserves the
-    /// slots exactly as the caller filled them rather than trying to be clever.
+    /// into the query form.
+    ///
+    /// Callers write it the H82 way: a channel-scoped write carries the channel in "param"
+    /// and the body in "param2", while a plain write carries the body alone in "param".
+    /// A family that orders the two slots differently is remapped here, so no call site
+    /// has to know which camera it is talking to.
     /// </summary>
     private string AddressWrite(JsonObject payload)
     {
         var module = (string?)payload["mod"] ?? "";
         var command = (string?)payload["cmd"] ?? "set";
 
+        static string Text(JsonNode value) =>
+            value is JsonObject or JsonArray ? value.ToJsonString() : value.ToString();
+
         var extra = new List<(string, string)>();
 
-        foreach (var slot in new[] { "param", "param2" })
+        if (payload["param2"] is { } body)
         {
-            if (payload[slot] is not { } value) continue;
+            // Channel-scoped: the caller's "param" is the channel, "param2" the body.
+            if (payload["param"] is { } channel)
+                extra.Add((_auth.ChannelParam, Text(channel)));
 
-            // A JSON object or array travels as its text; a bare scalar as itself.
-            extra.Add((slot, value is JsonObject or JsonArray
-                ? value.ToJsonString()
-                : value.ToString()));
+            extra.Add((_auth.PayloadParam, Text(body)));
+        }
+        else if (payload["param"] is { } only)
+        {
+            // Plain write - both families carry the body in "param".
+            extra.Add(("param", Text(only)));
         }
 
         return Address(module, command, extra.ToArray());
