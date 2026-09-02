@@ -98,6 +98,7 @@ public sealed class DiscoveryService : IDisposable
     private async Task SweepAsync(List<string> subnets, CancellationToken ct)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var skipped = new List<string>();
 
         foreach (var subnet in subnets)
         {
@@ -111,10 +112,15 @@ public sealed class DiscoveryService : IDisposable
             {
                 lock (seen) seen.Add(hit.Address);
                 await EnsurePresentAsync(hit.Address, ct);
+            },
+            (address, reason) =>
+            {
+                lock (skipped) skipped.Add($"  {address,-16}{reason}");
             }, ct);
         }
 
         await AgeOutAsync(seen, ct);
+        WriteReport(subnets, seen, skipped);
 
         // Counting enumerates the bound collection, so it has to happen on the UI
         // thread - the CollectionView WPF wraps around it is thread-affine.
@@ -122,6 +128,57 @@ public sealed class DiscoveryService : IDisposable
             Cameras.Count(c => c.State is CameraState.Online or CameraState.CredentialsRequired));
 
         Report(online == 1 ? "1 camera" : $"{online} cameras");
+    }
+
+    /// <summary>
+    /// Records what the last sweep actually saw. Without this a camera that is missing
+    /// from the list looks identical whether it answered and was rejected, answered too
+    /// slowly, or was never on a swept subnet at all - and the status messages this class
+    /// raises are not shown anywhere, so there is nothing else to go on.
+    /// </summary>
+    private void WriteReport(List<string> subnets, HashSet<string> seen, List<string> skipped)
+    {
+        try
+        {
+            var text = new System.Text.StringBuilder()
+                .AppendLine("RTSP Camera Setup - last discovery sweep")
+                .AppendLine($"Finished:  {DateTime.Now:yyyy-MM-dd HH:mm:ss}")
+                .AppendLine($"Swept:     {string.Join(", ", subnets.Select(s => $"{s}.0/24"))}")
+                .AppendLine($"Probe:     port {_config.Discovery.ProbePort}{_config.Discovery.LoginPath}, " +
+                            $"connect {_config.Discovery.ConnectTimeoutMs} ms, " +
+                            $"page {_config.Discovery.PageTimeoutMs} ms then a longer retry")
+                .AppendLine()
+                .AppendLine($"Cameras found ({seen.Count}):");
+
+            foreach (var address in seen.OrderBy(a => a, StringComparer.OrdinalIgnoreCase))
+                text.AppendLine($"  {address}");
+
+            if (seen.Count == 0) text.AppendLine("  (none)");
+
+            lock (skipped)
+            {
+                text.AppendLine()
+                    .AppendLine($"Answered on the probe port but were not cameras ({skipped.Count}):");
+
+                foreach (var line in skipped.OrderBy(l => l, StringComparer.OrdinalIgnoreCase))
+                    text.AppendLine(line);
+
+                if (skipped.Count == 0) text.AppendLine("  (none)");
+            }
+
+            text.AppendLine()
+                .AppendLine("A camera you expected that appears nowhere above never answered on the")
+                .AppendLine("probe port. Check that its address falls inside one of the swept subnets,")
+                .AppendLine("that it is reachable from this machine, and - if several cameras are still")
+                .AppendLine("on their factory address - that two of them are not sharing one address,")
+                .AppendLine("which makes them indistinguishable from a single camera.");
+
+            System.IO.File.WriteAllText(AppData.File("discovery.log"), text.ToString());
+        }
+        catch
+        {
+            // Diagnostics must never be the reason discovery stops.
+        }
     }
 
     private async Task EnsurePresentAsync(string address, CancellationToken ct)

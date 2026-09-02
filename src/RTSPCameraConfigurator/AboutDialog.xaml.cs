@@ -21,6 +21,7 @@ public partial class AboutDialog : Window
         AddRow(ref row, "Presets", presetDirectory);
         AddRow(ref row, "Saved credentials", credentialPath);
         AddRow(ref row, "Crash log", AppData.File("crash.log"));
+        AddRow(ref row, "Discovery log", AppData.File("discovery.log"));
     }
 
     /// <summary>

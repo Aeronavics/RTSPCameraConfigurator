@@ -60,11 +60,18 @@ public static class Discovery
     /// Scans <paramref name="subnet"/> (e.g. "192.168.1") plus any configured
     /// factory-default addresses, reporting each hit as it is confirmed.
     /// </summary>
+    /// <param name="onSkipped">
+    /// Called for every host that answered on the probe port but was not accepted, with
+    /// the reason. A camera that is missing from the list is otherwise indistinguishable
+    /// from one that is not on the network at all, which makes the failure impossible to
+    /// diagnose from the outside.
+    /// </param>
     public static async Task<List<DiscoveredCamera>> ScanAsync(
         string subnet,
         DiscoverySpec spec,
         IProgress<double>? progress = null,
         Func<DiscoveredCamera, Task>? onFound = null,
+        Action<string, string>? onSkipped = null,
         CancellationToken ct = default)
     {
         var targets = new List<string>();
@@ -85,7 +92,7 @@ public static class Discovery
             await gate.WaitAsync(ct);
             try
             {
-                var camera = await ProbeAsync(address, spec, ct);
+                var camera = await ProbeAsync(address, spec, onSkipped, ct);
                 if (camera is not null)
                 {
                     lock (sync) found.Add(camera);
@@ -115,35 +122,73 @@ public static class Discovery
     public static Task<bool> RespondsAsync(string address, DiscoverySpec spec, CancellationToken ct = default) =>
         IsPortOpenAsync(address, spec.ProbePort, spec.ConnectTimeoutMs, ct);
 
-    private static async Task<DiscoveredCamera?> ProbeAsync(string address, DiscoverySpec spec, CancellationToken ct)
+    /// <summary>
+    /// The budget for a second attempt at the login page. The first attempt uses the
+    /// configured short one so that a subnet full of printers, switches and NASes stays
+    /// cheap to sweep. Only a host that actually accepted the connection - a handful per
+    /// /24 - earns the generous retry, because a camera busy serving video can easily
+    /// miss a 1.2 s window, and losing it there made it vanish from the list with no
+    /// clue as to why.
+    /// </summary>
+    private static int RetryPageTimeoutMs(DiscoverySpec spec) =>
+        Math.Max(5000, spec.PageTimeoutMs * 4);
+
+    private static async Task<DiscoveredCamera?> ProbeAsync(
+        string address, DiscoverySpec spec, Action<string, string>? onSkipped, CancellationToken ct)
     {
         if (!await IsPortOpenAsync(address, spec.ProbePort, spec.ConnectTimeoutMs, ct))
             return null;
 
-        string page;
-        try
-        {
-            using var pageTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            pageTimeout.CancelAfter(TimeSpan.FromMilliseconds(Math.Max(250, spec.PageTimeoutMs)));
-            // Read bytes rather than GetStringAsync: this firmware family sends a
-            // quoted charset ('utf-8') that .NET refuses to interpret.
-            using var res = await Http.GetAsync(
-                $"http://{address}:{spec.ProbePort}{spec.LoginPath}", pageTimeout.Token);
+        var (page, error) = await FetchLoginPageAsync(address, spec, spec.PageTimeoutMs, ct);
 
-            page = System.Text.Encoding.UTF8.GetString(
-                await res.Content.ReadAsByteArrayAsync(pageTimeout.Token));
-        }
-        catch
+        // Something is listening, so one slow reply is not enough to write it off.
+        if (page is null)
+            (page, error) = await FetchLoginPageAsync(address, spec, RetryPageTimeoutMs(spec), ct);
+
+        if (page is null)
         {
+            onSkipped?.Invoke(address, $"port {spec.ProbePort} open, but no login page ({error})");
             return null;
         }
 
         // Compare with whitespace collapsed so a firmware that formats the literal
         // slightly differently still matches.
         if (!Normalise(page).Contains(Normalise(spec.Signature), StringComparison.OrdinalIgnoreCase))
+        {
+            onSkipped?.Invoke(address,
+                $"port {spec.ProbePort} open, but {spec.LoginPath} did not carry {spec.Signature} ({page.Length} bytes)");
             return null;
+        }
 
         return new DiscoveredCamera(address, "camera");
+    }
+
+    private static async Task<(string? Page, string Error)> FetchLoginPageAsync(
+        string address, DiscoverySpec spec, int timeoutMs, CancellationToken ct)
+    {
+        var budget = Math.Max(250, timeoutMs);
+
+        try
+        {
+            using var pageTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            pageTimeout.CancelAfter(TimeSpan.FromMilliseconds(budget));
+            // Read bytes rather than GetStringAsync: this firmware family sends a
+            // quoted charset ('utf-8') that .NET refuses to interpret.
+            using var res = await Http.GetAsync(
+                $"http://{address}:{spec.ProbePort}{spec.LoginPath}", pageTimeout.Token);
+
+            return (System.Text.Encoding.UTF8.GetString(
+                await res.Content.ReadAsByteArrayAsync(pageTimeout.Token)), "");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException)
+        {
+            return (null, $"no reply within {budget} ms");
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.GetBaseException().Message);
+        }
     }
 
     private static string Normalise(string value) =>
