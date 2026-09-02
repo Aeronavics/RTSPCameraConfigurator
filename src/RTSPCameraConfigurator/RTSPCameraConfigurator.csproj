@@ -18,7 +18,7 @@
     <Copyright>SPS Automation</Copyright>
     <!-- Shown on the About tab and used to name the installer, so bump it here
          and both follow. -->
-    <Version>1.7.0</Version>
+    <Version>1.7.1</Version>
     <Platforms>x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
