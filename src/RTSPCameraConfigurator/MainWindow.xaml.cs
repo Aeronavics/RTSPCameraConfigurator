@@ -1337,24 +1337,37 @@ public partial class MainWindow : Window
     {
         if (_client is null || _profile is null) return;
 
-        BuildModuleTabs();
-        ServicesTab.Visibility = _modules.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // Read before building. Which controls a module has is decided by what the camera
+        // reports, not by config alone - the same spec serves firmware that carries
+        // different sets of fields.
+        var states = new Dictionary<string, JsonObject?>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var section in _modules)
+        foreach (var spec in _profile.Modules)
         {
+            if (!Supports(spec.CapabilityBit)) continue;
+
             try
             {
-                section.State = section.Spec.Channel is { } channel
-                    ? await _client.GetChannelAsync(section.Spec.Module, section.Spec.GetCommand, channel)
-                    : await _client.GetModuleAsync(section.Spec.Module, section.Spec.GetCommand);
+                states[spec.Key] = spec.Channel is { } channel
+                    ? await _client.GetChannelAsync(spec.Module, spec.GetCommand, channel)
+                    : await _client.GetModuleAsync(spec.Module, spec.GetCommand);
             }
             catch (CameraException)
             {
                 // Present in config but not on this firmware - leave the tab blank
                 // rather than failing the whole connect.
-                continue;
+                states[spec.Key] = null;
             }
+        }
 
+        BuildModuleTabs(states);
+        ServicesTab.Visibility = _modules.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        foreach (var section in _modules)
+        {
+            if (!states.TryGetValue(section.Spec.Key, out var state) || state is null) continue;
+
+            section.State = state;
             LoadModule(section);
         }
     }
@@ -1403,7 +1416,7 @@ public partial class MainWindow : Window
             _ => int.TryParse(node.ToString(), out var parsed) ? parsed : 0
         };
 
-    private void BuildModuleTabs()
+    private void BuildModuleTabs(IReadOnlyDictionary<string, JsonObject?> states)
     {
         if (_modules.Count > 0 || _profile is null) return;
 
@@ -1425,7 +1438,8 @@ public partial class MainWindow : Window
                 });
 
             var grid = NewFieldGrid();
-            RenderFields(spec.Fields, grid, 0, section.Fields, () => OnModuleChanged(section));
+            RenderFields(spec.Fields, grid, 0, section.Fields, () => OnModuleChanged(section),
+                states.GetValueOrDefault(spec.Key));
             panel.Children.Add(grid);
 
             if (spec.HasRegion)
@@ -1589,15 +1603,45 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Renders a field list into a grid, collecting the controls.</summary>
+    /// <summary>
+    /// True when the camera's payload actually carries this key, walking the same dotted
+    /// path a write would take. A null payload means "not known yet", which offers
+    /// everything rather than hiding the lot.
+    /// </summary>
+    private static bool PayloadHas(JsonObject? state, string key)
+    {
+        if (state is null) return true;
+        if (string.IsNullOrWhiteSpace(key)) return false;
+
+        JsonNode? node = state;
+
+        foreach (var part in key.Split('.'))
+        {
+            if (node is not JsonObject obj || !obj.TryGetPropertyValue(part, out node))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <param name="present">
+    /// What the camera reported. A field it does not mention is not rendered at all:
+    /// firmware in the same family differs in which fields it carries, and a control for
+    /// one that is absent would write a key the camera never had. The H8D answers such a
+    /// write with {"status":"ok"} and stores a zeroed record, so this is not cosmetic.
+    /// </param>
     private int RenderFields(
         IEnumerable<ModuleFieldSpec> fields,
         Grid grid,
         int row,
         List<(ModuleFieldSpec Field, FrameworkElement Control)> sink,
-        Action onChanged)
+        Action onChanged,
+        JsonObject? present = null)
     {
         foreach (var field in fields)
         {
+            if (!PayloadHas(present, field.Key)) continue;
+
             var control = MakeControl(field, onChanged);
 
             var holder = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1881,22 +1925,35 @@ public partial class MainWindow : Window
         // Must run before either builder: it clears both when the camera changed.
         GeneratedUiMatchesCamera();
 
-        BuildDetectorTabs();
-        DetectionTab.Visibility = _detectors.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // Read before building, for the same reason as the modules: a detector on one
+        // firmware carries work-mode and colour fields that the same detector on another
+        // does not, and only the payload says which.
+        var states = new Dictionary<string, JsonObject?>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var section in _detectors)
+        foreach (var spec in _profile.Detectors)
         {
+            if (!Supports(spec.CapabilityBit)) continue;
+
             try
             {
-                section.State = await _client.GetModuleAsync(section.Spec.Module);
+                states[spec.Key] = await _client.GetModuleAsync(spec.Module);
             }
             catch (CameraException)
             {
                 // The capability word said it exists but the module does not answer;
                 // leave that tab as it is rather than failing the whole connect.
-                continue;
+                states[spec.Key] = null;
             }
+        }
 
+        BuildDetectorTabs(states);
+        DetectionTab.Visibility = _detectors.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        foreach (var section in _detectors)
+        {
+            if (!states.TryGetValue(section.Spec.Key, out var state) || state is null) continue;
+
+            section.State = state;
             LoadDetector(section);
         }
     }
@@ -1985,7 +2042,7 @@ public partial class MainWindow : Window
         return hour is >= 0 and <= 24 && minute is >= 0 and <= 59 && !(hour == 24 && minute > 0);
     }
 
-    private void BuildDetectorTabs()
+    private void BuildDetectorTabs(IReadOnlyDictionary<string, JsonObject?> states)
     {
         if (_detectors.Count > 0 || _profile is null) return;
 
@@ -2009,7 +2066,10 @@ public partial class MainWindow : Window
             panel.Children.Add(section.EnableBox);
 
             var fields = NewFieldGrid();
-            var row = RenderFields(spec.Fields, fields, 0, section.Fields, () => OnDetectorChanged(section));
+            var reported = states.GetValueOrDefault(spec.Key);
+
+            var row = RenderFields(spec.Fields, fields, 0, section.Fields,
+                () => OnDetectorChanged(section), reported);
 
             if (spec.HasSensitivity)
             {
@@ -2073,7 +2133,12 @@ public partial class MainWindow : Window
                 ? new List<WorkModeOutputSpec>()
                 : spec.WorkModeOutputs.Count > 0 ? spec.WorkModeOutputs : defaults.WorkModeOutputs;
 
-            var offered = workModes.Where(w => Supports(w.CapabilityBit)).ToList();
+            // A work mode also has to exist in the payload. light_work_mode and
+            // voice_work_mode carry no capability bit, so the bit test alone offers them
+            // on firmware that has neither - and committing would then add both keys.
+            var offered = workModes
+                .Where(w => Supports(w.CapabilityBit) && PayloadHas(reported, w.Key))
+                .ToList();
 
             if (offered.Count > 0)
             {

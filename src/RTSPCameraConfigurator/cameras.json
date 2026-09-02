@@ -569,9 +569,13 @@
           "label": "Timed snapshot",
           "module": "timing_snapshot",
           "hasSchedule": true,
-          "note": "Snapshots on a timer, sent wherever the intervals below are set. Separate from snapshots taken on an alarm.",
+          "note": "Snapshots on a timer, sent to whichever destinations the camera offers below. Separate from snapshots taken on an alarm.",
           "fields": [
             { "key": "enable", "label": "Timed snapshots", "type": "toggle" },
+            // The H8D lineage has ONE interval and a single "output" destination, where the
+            // H82 has one interval per destination. Both sets are listed here; a field the
+            // camera does not report is never rendered.
+            { "key": "interval", "label": "Every", "type": "number", "min": 1, "max": 86400, "suffix": "seconds" },
             { "key": "ftp_interval", "label": "To FTP every", "type": "number", "min": 1, "max": 86400, "suffix": "seconds" },
             { "key": "email_interval", "label": "To email every", "type": "number", "min": 1, "max": 86400, "suffix": "seconds" },
             { "key": "sdcard_interval", "label": "To SD card every", "type": "number", "min": 1, "max": 86400, "suffix": "seconds" }
