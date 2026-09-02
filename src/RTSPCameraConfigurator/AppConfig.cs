@@ -38,6 +38,7 @@ public sealed class AppConfig
                        })
                    ?? throw new InvalidDataException($"{Path.GetFileName(path)} is empty or not valid JSON.");
 
+        ApplyUserSettings(root);
         ResolveInheritance(root, Path.GetFileName(path));
 
         var cfg = root.Deserialize<AppConfig>(Options)
@@ -47,6 +48,48 @@ public sealed class AppConfig
             throw new InvalidDataException($"{Path.GetFileName(path)} contains no camera profiles.");
 
         return cfg;
+    }
+
+    /// <summary>
+    /// The user's own settings, kept apart from the shipped file.
+    ///
+    /// cameras.json is program data: profiles, signatures and the field definitions the UI
+    /// is generated from all change with the code, and an upgrade has to deliver them - a
+    /// build that cannot talk to a camera model its own release added is no upgrade at all.
+    /// Anything the operator chooses instead lives here, so replacing cameras.json costs
+    /// them nothing.
+    /// </summary>
+    public static string UserSettingsPath => AppData.File("settings.json");
+
+    /// <summary>
+    /// Overlays <see cref="UserSettingsPath"/> on the shipped configuration. Absent or
+    /// unreadable, the shipped values stand: a corrupt settings file must not stop the app
+    /// starting, because the operator would have no way in to fix it.
+    /// </summary>
+    private static void ApplyUserSettings(System.Text.Json.Nodes.JsonNode root)
+    {
+        try
+        {
+            if (!File.Exists(UserSettingsPath)) return;
+
+            var text = File.ReadAllText(UserSettingsPath);
+            if (string.IsNullOrWhiteSpace(text)) return;
+
+            var user = System.Text.Json.Nodes.JsonNode.Parse(
+                text,
+                documentOptions: new JsonDocumentOptions
+                {
+                    CommentHandling = JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true
+                }) as System.Text.Json.Nodes.JsonObject;
+
+            if (user is not null && root is System.Text.Json.Nodes.JsonObject target)
+                Overlay(target, user);
+        }
+        catch
+        {
+            // Shipped defaults it is.
+        }
     }
 
     /// <summary>

@@ -18,6 +18,7 @@ public partial class AboutDialog : Window
 
         var row = 0;
         AddRow(ref row, "Configuration", configPath);
+        AddRow(ref row, "Your settings", AppConfig.UserSettingsPath);
         AddRow(ref row, "Presets", presetDirectory);
         AddRow(ref row, "Saved credentials", credentialPath);
         AddRow(ref row, "Crash log", AppData.File("crash.log"));

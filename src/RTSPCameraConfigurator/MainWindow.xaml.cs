@@ -100,6 +100,13 @@ public partial class MainWindow : Window
         _presetRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _presetRefreshTimer.Tick += (_, _) => { _presetRefreshTimer.Stop(); RefreshPresets(); };
 
+        // An older build wrote the operator's subnets into cameras.json itself. That file
+        // is replaced on upgrade, so the installer leaves the outgoing copy beside it and
+        // those choices are lifted out of that, once, into the user's own settings.
+        ConfigFile.MigrateUserSettings(
+            Path.Combine(AppContext.BaseDirectory, "cameras.previous.json"),
+            AppConfig.UserSettingsPath);
+
         try
         {
             _config = AppConfig.Load(ConfigPath());
@@ -226,12 +233,12 @@ public partial class MainWindow : Window
 
         try
         {
-            ConfigFile.UpdateDiscovery(ConfigPath(), dialog.Subnets, dialog.Continuous,
+            ConfigFile.UpdateDiscovery(AppConfig.UserSettingsPath, dialog.Subnets, dialog.Continuous,
                 dialog.RefreshSeconds, dialog.InterfaceAlias);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Could not save cameras.json:{Environment.NewLine}{ex.Message}",
+            MessageBox.Show($"Could not save settings:{Environment.NewLine}{ex.Message}",
                 "Settings", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
@@ -250,7 +257,7 @@ public partial class MainWindow : Window
     private void OnReloadConfigClicked(object sender, RoutedEventArgs e)
     {
         MessageBox.Show(
-            "cameras.json is read at startup. Restart the app to pick up edits made " +
+            "Settings are read at startup. Restart the app to pick up edits made " +
             "outside it." + Environment.NewLine + Environment.NewLine +
             "Subnet changes made through Settings apply immediately and do not need a restart.",
             "Reload configuration", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -349,7 +356,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                ConfigFile.UpdateDiscovery(ConfigPath(), discovery.Subnets, discovery.Continuous,
+                ConfigFile.UpdateDiscovery(AppConfig.UserSettingsPath, discovery.Subnets, discovery.Continuous,
                     discovery.RefreshSeconds, adapter);
                 discovery.InterfaceAlias = adapter;
             }
