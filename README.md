@@ -774,7 +774,29 @@ in-process decoder to crash the app, rather than speed.
 2. Confirm the auth flow and the `mod`/`cmd` names it uses.
 3. Add a profile to `cameras.json` with a `match` block that identifies it.
 
-If a model differs structurally — a different auth scheme or a non-JSON API — that
-needs a new transport implementation alongside `CameraClient`. Everything above the
-transport (UI generation, discovery, preview) is model-agnostic.
+A model that shares the module vocabulary but addresses requests differently does not
+need any new code. The `auth` block describes the transport, and a profile can
+`inherit` another and override only what differs — see the H8D profile, which reuses
+every H82 definition and changes only how a request is spelled:
+
+| field | meaning |
+|---|---|
+| `moduleParam` / `commandParam` | which query parameters name the module and the verb |
+| `credentials` | `session` for a Session-Id header, `query` for per-request credentials |
+| `passwordDerivation` | `hmacsha1-of-md5hex`, or empty to send the password unchanged |
+| `writes` | `post-json` body, or `get-query` parameters |
+| `channelParam` / `payloadParam` | which slot carries the channel and which the body |
+
+Get those last two the wrong way round and the H8D answers `{"status":"ok"}` while
+writing a zeroed record, so verify a write by reading it back rather than trusting the
+status. [docs/h8d-api-map.md](docs/h8d-api-map.md) is the worked example: the full API
+of a second firmware family, and which of it was confirmed against hardware.
+
+The auth scheme is **not** chosen from the device record — two cameras of the same
+model and CPU can disagree because the firmware revision differs. `CameraClient.OpenAsync`
+tries each configured scheme and keeps the one that logs in.
+
+A model with a genuinely different API — not JSON, or a different endpoint shape — still
+needs a new transport alongside `CameraClient`. Everything above the transport (UI
+generation, discovery, preview) is model-agnostic.
 
