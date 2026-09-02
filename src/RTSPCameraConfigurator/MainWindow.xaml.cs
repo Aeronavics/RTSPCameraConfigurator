@@ -473,8 +473,8 @@ public partial class MainWindow : Window
             var saved = _credentials.TryGet(camera.Address);
             var (user, password) = saved ?? DefaultCredentials;
 
-            using var client = new CameraClient(camera.Address, profile.Auth);
-            await client.LoginAsync(user, password);
+            using var client = await CameraClient.OpenAsync(
+                camera.Address, _config.AuthSchemes(), user, password);
             await client.SystemCommandAsync(profile.System.Module, command);
 
             SetStatus(successMessage);
@@ -700,10 +700,10 @@ public partial class MainWindow : Window
 
         try
         {
-            // Log in with the first profile's auth spec, then re-select the profile
-            // from the device info the camera reports.
-            pending = new CameraClient(address, _config.Profiles[0].Auth);
-            await pending.LoginAsync(username, password, ct);
+            // Log in with whichever scheme this camera accepts, then re-select the
+            // profile from the device info it reports.
+            pending = await CameraClient.OpenAsync(
+                address, _config.AuthSchemes(), username, password, ct: ct);
 
             ct.ThrowIfCancellationRequested();
 
@@ -3228,10 +3228,9 @@ public partial class MainWindow : Window
             // Writes are slower than reads - an encoder change restarts the capture
             // pipeline, and a network change reconfigures the interface mid-request.
             // The default 10s read timeout is too tight for those.
-            using var client = new CameraClient(
-                camera.Address, _config.Profiles[0].Auth, TimeSpan.FromSeconds(30));
-
-            await client.LoginAsync(_activeUser, _activePassword);
+            using var client = await CameraClient.OpenAsync(
+                camera.Address, _config.AuthSchemes(), _activeUser, _activePassword,
+                TimeSpan.FromSeconds(30));
 
             var profile = _config.MatchProfile(camera.Info);
             var steps = await snapshot.ApplyAsync(client, profile, applyNetwork);

@@ -209,6 +209,45 @@ public sealed class DiscoveryService : IDisposable
         await IdentifyAsync(camera, ct);
     }
 
+    /// <summary>
+    /// Logs in with whichever profile's auth this camera actually accepts, and returns the
+    /// open client together with its device record.
+    /// </summary>
+    private async Task<(CameraClient Client, Dictionary<string, string> Info)> OpenAsync(
+        string address, string user, string password, CancellationToken ct)
+    {
+        Exception? first = null;
+
+        foreach (var auth in _config.AuthSchemes())
+        {
+            var client = new CameraClient(address, auth);
+            try
+            {
+                await client.LoginAsync(user, password, ct);
+
+                var device = await client.GetModuleAsync("device", ct);
+                var info = device.ToDictionary(
+                    kv => kv.Key, kv => kv.Value?.ToString() ?? "", StringComparer.OrdinalIgnoreCase);
+
+                // A camera answering the wrong dialect can still return a shape - insist on
+                // something that actually identifies it before accepting the scheme.
+                if (!info.ContainsKey("devtype") && !info.ContainsKey("cpu_type"))
+                    throw new CameraException("Device record carried no model or CPU field.");
+
+                return (client, info);
+            }
+            catch (Exception ex)
+            {
+                client.Dispose();
+                first ??= ex;
+
+                if (ex is OperationCanceledException && ct.IsCancellationRequested) throw;
+            }
+        }
+
+        throw first ?? new CameraException("No configured profile could log in.");
+    }
+
     /// <summary>Logs in once to learn what the camera is. Failure is a state, not an error.</summary>
     private async Task IdentifyAsync(LiveCamera camera, CancellationToken ct)
     {
@@ -219,12 +258,12 @@ public sealed class DiscoveryService : IDisposable
 
         try
         {
-            using var client = new CameraClient(camera.Address, _config.Profiles[0].Auth);
-            await client.LoginAsync(user, password, ct);
-
-            var device = await client.GetModuleAsync("device", ct);
-            var info = device.ToDictionary(
-                kv => kv.Key, kv => kv.Value?.ToString() ?? "", StringComparer.OrdinalIgnoreCase);
+            // Which dialect a camera speaks is not knowable until something answers, and
+            // the answer is what names the profile. So each distinct auth scheme is tried
+            // in turn and the first that logs in and yields a device record wins.
+            var opened = await OpenAsync(camera.Address, user, password, ct);
+            using var client = opened.Client;
+            var info = opened.Info;
 
             var profile = _config.MatchProfile(info);
             var summary = "";

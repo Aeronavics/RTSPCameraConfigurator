@@ -39,6 +39,15 @@
     "probePort": 80,
     "loginPath": "/view/login.html",
     "signature": "realm = \"CAMERA\"",
+
+    "$comment_signatures": [
+      "Extra login-page markers. A camera is accepted if its page carries ANY of these.",
+      "The H82 lineage embeds a digest challenge (realm/nonce) in the page itself; the",
+      "H8D lineage does not, and is recognised by the auth script its page loads."
+    ],
+    "signatures": [
+      "hmac_sha1.js"
+    ],
     "connectTimeoutMs": 400,
 
     "$comment_pagetimeout": "After a host accepts the connection, how long to wait for its login page before deciding it is not a camera. This dominates a sweep on a busy subnet where many devices answer on port 80; 3000 made discovery feel stuck.",
@@ -975,6 +984,45 @@
         { "key": "devno",          "label": "Device no." },
         { "key": "chn_num",        "label": "Channels" }
       ]
+    },
+
+    {
+      "name": "Vatilon H8D / SSC378DE",
+      "inherits": "Vatilon H82 / Hi3516CV610",
+      "match": { "cpu_type": "ssc378de" },
+
+      "$comment": [
+        "Same firmware lineage as the H82 and the same module vocabulary - video, image,",
+        "osd, privacy, rtsp, onvif, net, systime, storage and the rest answer with",
+        "identical field names, and system_function carries the same capability bits.",
+        "Only the transport differs, so the rest is inherited rather than repeated.",
+        "",
+        "Differences from the H82:",
+        "  - a request names its module with 'cmd' and its verb with 'action', the",
+        "    reverse of the H82's 'mod'/'cmd'",
+        "  - there is no login step and no Session-Id; the username and a derived token",
+        "    ride on every request instead",
+        "  - the token is HMAC-SHA1(key=username, msg=md5hex(password)) - the same",
+        "    derivation this lineage already uses for RTSP passwords",
+        "  - writes are GETs carrying param/param2 as query parameters",
+        "",
+        "Note the device module on this firmware answers in full whatever password is",
+        "presented, so the password is confirmed against the account module instead."
+      ],
+
+      "auth": {
+        "scheme": "query-token",
+        "challengePath": "view/login.html",
+        "moduleParam": "cmd",
+        "commandParam": "action",
+        "credentials": "query",
+        "passwordDerivation": "hmacsha1-of-md5hex",
+        "writes": "get-query",
+        "checkModule": "account",
+        "checkCommand": "check",
+        "defaultUsername": "admin",
+        "defaultPassword": "123456"
+      }
     }
   ]
 }

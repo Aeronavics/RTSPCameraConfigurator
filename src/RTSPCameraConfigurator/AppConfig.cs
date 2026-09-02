@@ -29,7 +29,18 @@ public sealed class AppConfig
         if (!File.Exists(path))
             throw new FileNotFoundException($"Configuration file not found: {path}");
 
-        var cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path), Options)
+        var root = System.Text.Json.Nodes.JsonNode.Parse(
+                       File.ReadAllText(path),
+                       documentOptions: new JsonDocumentOptions
+                       {
+                           CommentHandling = JsonCommentHandling.Skip,
+                           AllowTrailingCommas = true
+                       })
+                   ?? throw new InvalidDataException($"{Path.GetFileName(path)} is empty or not valid JSON.");
+
+        ResolveInheritance(root, Path.GetFileName(path));
+
+        var cfg = root.Deserialize<AppConfig>(Options)
                   ?? throw new InvalidDataException($"{Path.GetFileName(path)} is empty or not valid JSON.");
 
         if (cfg.Profiles.Count == 0)
@@ -39,10 +50,93 @@ public sealed class AppConfig
     }
 
     /// <summary>
+    /// Expands a profile's "inherits": "&lt;other profile name&gt;" by overlaying it on a copy
+    /// of the named profile.
+    ///
+    /// Camera families that share a firmware lineage differ only in how a request is
+    /// addressed - the module and field vocabulary is the same - so without this a second
+    /// family means duplicating tens of thousands of characters of identical definitions,
+    /// and every later fix has to be made twice.
+    /// </summary>
+    private static void ResolveInheritance(System.Text.Json.Nodes.JsonNode root, string fileName)
+    {
+        if (root["profiles"] is not System.Text.Json.Nodes.JsonArray profiles) return;
+
+        System.Text.Json.Nodes.JsonObject? ByName(string name) =>
+            profiles.OfType<System.Text.Json.Nodes.JsonObject>().FirstOrDefault(p =>
+                string.Equals((string?)p["name"], name, StringComparison.OrdinalIgnoreCase));
+
+        for (var i = 0; i < profiles.Count; i++)
+        {
+            if (profiles[i] is not System.Text.Json.Nodes.JsonObject child) continue;
+
+            var parentName = (string?)child["inherits"];
+            if (string.IsNullOrWhiteSpace(parentName)) continue;
+
+            var parent = ByName(parentName)
+                ?? throw new InvalidDataException(
+                    $"{fileName}: profile '{(string?)child["name"]}' inherits from '{parentName}', which does not exist.");
+
+            if (!string.IsNullOrWhiteSpace((string?)parent["inherits"]))
+                throw new InvalidDataException(
+                    $"{fileName}: profile '{parentName}' itself inherits; chained inheritance is not supported.");
+
+            var merged = parent.DeepClone().AsObject();
+            Overlay(merged, child);
+            merged.Remove("inherits");
+
+            profiles[i] = merged;
+        }
+    }
+
+    /// <summary>
+    /// Deep-merges <paramref name="over"/> into <paramref name="onto"/>. Objects merge key by
+    /// key; anything else - arrays included - replaces wholesale, because a profile that
+    /// redefines a list means "these instead of those", not "these as well".
+    /// </summary>
+    private static void Overlay(System.Text.Json.Nodes.JsonObject onto, System.Text.Json.Nodes.JsonObject over)
+    {
+        foreach (var (key, value) in over.ToList())
+        {
+            if (onto[key] is System.Text.Json.Nodes.JsonObject target &&
+                value is System.Text.Json.Nodes.JsonObject source)
+            {
+                Overlay(target, source);
+                continue;
+            }
+
+            onto[key] = value?.DeepClone();
+        }
+    }
+
+    /// <summary>
     /// Picks the profile whose "match" block is satisfied by the device info the
     /// camera reported. Falls back to the first profile so an unrecognised but
     /// API-compatible camera is still usable.
     /// </summary>
+    /// <summary>
+    /// One entry per genuinely different way of talking to a camera.
+    ///
+    /// Which one a camera wants cannot be known from its device record: two units of the
+    /// same model and CPU can disagree, because the scheme changed between firmware
+    /// revisions. So a connection tries these in turn rather than choosing up front.
+    /// Profiles sharing a scheme - the usual case, since a lineage differs only in its
+    /// module list - collapse to one entry so no attempt is wasted.
+    /// </summary>
+    public IEnumerable<AuthSpec> AuthSchemes()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var profile in Profiles)
+        {
+            var auth = profile.Auth;
+            var key = string.Join("|", auth.Scheme, auth.Credentials, auth.ModuleParam,
+                                  auth.CommandParam, auth.PasswordDerivation, auth.LoginQuery);
+
+            if (seen.Add(key)) yield return auth;
+        }
+    }
+
     public CameraProfile MatchProfile(IReadOnlyDictionary<string, string> deviceInfo)
     {
         foreach (var profile in Profiles)
@@ -88,6 +182,19 @@ public sealed class DiscoverySpec
     [JsonPropertyName("probePort")] public int ProbePort { get; set; } = 80;
     [JsonPropertyName("loginPath")] public string LoginPath { get; set; } = "/view/login.html";
     [JsonPropertyName("signature")] public string Signature { get; set; } = "realm = \"CAMERA\"";
+
+    /// <summary>
+    /// Extra login-page markers that also identify a supported camera. Firmware families
+    /// in the same lineage serve quite different login pages - the H8D's carries no digest
+    /// challenge at all - so a single literal recognises only one of them and the rest are
+    /// silently invisible.
+    /// </summary>
+    [JsonPropertyName("signatures")] public List<string> Signatures { get; set; } = new();
+
+    /// <summary>Every marker to test: the single <see cref="Signature"/> plus any extras.</summary>
+    public IEnumerable<string> AllSignatures() =>
+        (string.IsNullOrWhiteSpace(Signature) ? Array.Empty<string>() : new[] { Signature })
+        .Concat(Signatures.Where(s => !string.IsNullOrWhiteSpace(s)));
     [JsonPropertyName("connectTimeoutMs")] public int ConnectTimeoutMs { get; set; } = 400;
 
     /// <summary>
@@ -168,6 +275,40 @@ public sealed class AuthSpec
     [JsonPropertyName("loginQuery")] public string LoginQuery { get; set; } = "mod=session&cmd=login1";
     [JsonPropertyName("defaultUsername")] public string DefaultUsername { get; set; } = "admin";
     [JsonPropertyName("defaultPassword")] public string DefaultPassword { get; set; } = "";
+
+    /// <summary>
+    /// Which query parameter names the module and the verb. The H82 lineage asks for
+    /// "mod=video&amp;cmd=get_main"; the H8D lineage spells the same request
+    /// "cmd=video&amp;action=get_main". The vocabulary either side of the '=' is shared,
+    /// so only these two names change.
+    /// </summary>
+    [JsonPropertyName("moduleParam")] public string ModuleParam { get; set; } = "mod";
+    [JsonPropertyName("commandParam")] public string CommandParam { get; set; } = "cmd";
+
+    /// <summary>
+    /// How a request proves who it is: "session" presents the Session-Id handed out by
+    /// login; "query" appends the username and a derived token to every request, which is
+    /// what the H8D firmware does - it keeps no session at all.
+    /// </summary>
+    [JsonPropertyName("credentials")] public string Credentials { get; set; } = "session";
+
+    /// <summary>
+    /// Turns the typed password into what the wire expects. Empty sends it unchanged;
+    /// "hmacsha1-of-md5hex" is the same derivation this firmware family already uses for
+    /// RTSP passwords, reused here for the web API.
+    /// </summary>
+    [JsonPropertyName("passwordDerivation")] public string PasswordDerivation { get; set; } = "";
+
+    /// <summary>
+    /// How a write is carried: "post-json" posts {mod,cmd,param,param2} as a body;
+    /// "get-query" sends the same fields as query parameters, the JSON ones encoded as
+    /// strings. The H8D web UI only ever issues GETs.
+    /// </summary>
+    [JsonPropertyName("writes")] public string Writes { get; set; } = "post-json";
+
+    /// <summary>Read back to confirm a password: module and verb, for the "query" scheme.</summary>
+    [JsonPropertyName("checkModule")] public string CheckModule { get; set; } = "account";
+    [JsonPropertyName("checkCommand")] public string CheckCommand { get; set; } = "check";
 }
 
 public sealed class RtspSpec

@@ -49,12 +49,92 @@ public sealed class CameraClient : IDisposable
         };
     }
 
+    /// <summary>
+    /// Connects with whichever of <paramref name="schemes"/> the camera actually accepts.
+    ///
+    /// The scheme is a property of the firmware, not of the model: two H8D units differ
+    /// because one shipped with digest-and-Session-Id and the other with a per-request
+    /// token. Nothing in the device record distinguishes them, and the record cannot be
+    /// read until a scheme has already been chosen - so the choice is made by trying.
+    /// </summary>
+    public static async Task<CameraClient> OpenAsync(
+        string host,
+        IEnumerable<AuthSpec> schemes,
+        string username,
+        string password,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default)
+    {
+        Exception? first = null;
+
+        foreach (var auth in schemes)
+        {
+            var client = new CameraClient(host, auth, timeout);
+            try
+            {
+                await client.LoginAsync(username, password, ct);
+                return client;
+            }
+            catch (Exception ex)
+            {
+                client.Dispose();
+                first ??= ex;
+
+                if (ex is OperationCanceledException && ct.IsCancellationRequested) throw;
+            }
+        }
+
+        throw first ?? new CameraException($"No configured authentication scheme was accepted by {host}.");
+    }
+
+    /// <summary>What actually travels as the password, once the profile's derivation is applied.</summary>
+    private string _token = "";
+
+    /// <summary>
+    /// True when the firmware keeps no session and expects the credentials on every
+    /// request instead of a Session-Id header.
+    /// </summary>
+    private bool UsesQueryCredentials =>
+        string.Equals(_auth.Credentials, "query", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Spells one request the way this camera's firmware expects: the module and verb under
+    /// the profile's parameter names, then any extra parameters, then the credentials if the
+    /// firmware wants them on every call.
+    /// </summary>
+    private string Address(string module, string command, params (string Key, string Value)[] extra)
+    {
+        var parts = new List<string>
+        {
+            $"{_auth.ModuleParam}={Uri.EscapeDataString(module)}",
+            $"{_auth.CommandParam}={Uri.EscapeDataString(command)}"
+        };
+
+        foreach (var (key, value) in extra)
+            parts.Add($"{key}={Uri.EscapeDataString(value)}");
+
+        if (UsesQueryCredentials)
+        {
+            parts.Add($"username={Uri.EscapeDataString(_user)}");
+            parts.Add($"password={Uri.EscapeDataString(_token)}");
+        }
+
+        return string.Join("&", parts);
+    }
+
     // ---------------------------------------------------------------- login
 
     public async Task LoginAsync(string username, string password, CancellationToken ct = default)
     {
         _user = username;
         _pass = password;
+        _token = DeriveRtspPassword(username, password, _auth.PasswordDerivation);
+
+        if (UsesQueryCredentials)
+        {
+            await CheckQueryCredentialsAsync(ct);
+            return;
+        }
 
         string html;
         try
@@ -95,6 +175,27 @@ public sealed class CameraClient : IDisposable
 
         if (string.IsNullOrWhiteSpace(SessionId))
             throw new CameraException("Login succeeded but the camera returned no Session-Id.");
+    }
+
+    /// <summary>
+    /// Confirms a password for firmware that has no login step, by making a call that does
+    /// enforce it. The device module deliberately is not used for this: on the H8D it
+    /// answers in full whatever password is presented, so it would accept anything.
+    /// </summary>
+    private async Task CheckQueryCredentialsAsync(CancellationToken ct)
+    {
+        JsonNode node;
+        try
+        {
+            node = await SendGetAsync(Address(_auth.CheckModule, _auth.CheckCommand), ct);
+        }
+        catch (CameraException ex)
+        {
+            throw new CameraException($"Could not reach {Host}: {ex.Message}");
+        }
+
+        if (!string.Equals(StatusOf(node), "ok", StringComparison.OrdinalIgnoreCase))
+            throw new CameraException("Login rejected - check the username and password.");
     }
 
     private static string BuildDigestHeader(string user, string pass, string realm, string nonce, string uri)
@@ -152,6 +253,12 @@ public sealed class CameraClient : IDisposable
 
     private async Task<JsonNode> SendPostAsync(JsonObject payload, CancellationToken ct)
     {
+        // Firmware that only ever issues GETs takes the very same fields as query
+        // parameters, with the JSON ones encoded as strings. Callers keep building one
+        // shape; the difference lives here.
+        if (string.Equals(_auth.Writes, "get-query", StringComparison.OrdinalIgnoreCase))
+            return await SendGetAsync(AddressWrite(payload), ct);
+
         using var req = new HttpRequestMessage(HttpMethod.Post, CgiPath)
         {
             Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json")
@@ -163,6 +270,32 @@ public sealed class CameraClient : IDisposable
 
         return TryParseJson(body)
                ?? throw new CameraException($"Camera rejected the write: {Truncate(body)}");
+    }
+
+    /// <summary>
+    /// Turns a write payload - the {mod, cmd, param, param2} shape every caller builds -
+    /// into the query form. Which slot carries the channel and which the values is a
+    /// per-module detail that differs between firmware families, so this preserves the
+    /// slots exactly as the caller filled them rather than trying to be clever.
+    /// </summary>
+    private string AddressWrite(JsonObject payload)
+    {
+        var module = (string?)payload["mod"] ?? "";
+        var command = (string?)payload["cmd"] ?? "set";
+
+        var extra = new List<(string, string)>();
+
+        foreach (var slot in new[] { "param", "param2" })
+        {
+            if (payload[slot] is not { } value) continue;
+
+            // A JSON object or array travels as its text; a bare scalar as itself.
+            extra.Add((slot, value is JsonObject or JsonArray
+                ? value.ToJsonString()
+                : value.ToString()));
+        }
+
+        return Address(module, command, extra.ToArray());
     }
 
     private void AttachSession(HttpRequestMessage req)
@@ -195,7 +328,7 @@ public sealed class CameraClient : IDisposable
 
     public async Task<JsonObject> GetModuleAsync(string module, string command, CancellationToken ct = default)
     {
-        var node = await GetAsync($"mod={module}&cmd={command}", ct);
+        var node = await GetAsync(Address(module, command), ct);
         return node as JsonObject
                ?? throw new CameraException($"Module '{module}' returned an unexpected shape.");
     }
@@ -207,7 +340,7 @@ public sealed class CameraClient : IDisposable
     public async Task<JsonArray> GetArrayAsync(
         string module, string command, CancellationToken ct = default)
     {
-        var node = await GetAsync($"mod={module}&cmd={command}", ct);
+        var node = await GetAsync(Address(module, command), ct);
         return node as JsonArray
                ?? throw new CameraException($"'{module}/{command}' did not return a list.");
     }
@@ -231,8 +364,8 @@ public sealed class CameraClient : IDisposable
     /// </summary>
     public async Task<JsonObject> GetChannelAsync(string module, string command, int channel, CancellationToken ct = default)
     {
-        var param2 = Uri.EscapeDataString($"{{\"channel\":{channel}}}");
-        var node = await GetAsync($"mod={module}&cmd={command}&param2={param2}", ct);
+        var node = await GetAsync(
+            Address(module, command, ("param2", $"{{\"channel\":{channel}}}")), ct);
 
         return node as JsonObject
                ?? throw new CameraException($"'{module}/{command}' returned an unexpected shape.");
@@ -286,7 +419,7 @@ public sealed class CameraClient : IDisposable
     {
         try
         {
-            var node = await SendGetAsync($"mod={module}&cmd={command}", ct);
+            var node = await SendGetAsync(Address(module, command), ct);
 
             var status = StatusOf(node);
             if (status is not null && !string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase))

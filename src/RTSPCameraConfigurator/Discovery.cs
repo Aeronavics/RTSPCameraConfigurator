@@ -153,10 +153,14 @@ public static class Discovery
 
         // Compare with whitespace collapsed so a firmware that formats the literal
         // slightly differently still matches.
-        if (!Normalise(page).Contains(Normalise(spec.Signature), StringComparison.OrdinalIgnoreCase))
+        var flat = Normalise(page);
+        var markers = spec.AllSignatures().ToList();
+
+        if (!markers.Any(m => flat.Contains(Normalise(m), StringComparison.OrdinalIgnoreCase)))
         {
             onSkipped?.Invoke(address,
-                $"port {spec.ProbePort} open, but {spec.LoginPath} did not carry {spec.Signature} ({page.Length} bytes)");
+                $"port {spec.ProbePort} open, but {spec.LoginPath} carried none of " +
+                $"{string.Join(" / ", markers)} ({page.Length} bytes)");
             return null;
         }
 
